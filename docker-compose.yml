@@ -1,7 +1,7 @@
 services:
 
   server:
-    build: .
+    image: ghcr.io/nmemmert/shpm:main
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -21,7 +21,7 @@ services:
       start_period: 10s
 
   worker:
-    build: .
+    image: ghcr.io/nmemmert/shpm:main
     restart: unless-stopped
     command: ["node", "worker/index.js"]
     environment:
