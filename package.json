@@ -1,0 +1,32 @@
+{
+  "name": "luma",
+  "version": "0.1.0",
+  "description": "Luma — self-hosted photo manager",
+  "type": "module",
+  "scripts": {
+    "worker": "node worker/index.js",
+    "server": "node server/index.js",
+    "dev:worker": "node --watch worker/index.js",
+    "dev:server": "node --watch server/index.js",
+    "dev:client": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "exifr": "^7.1.3",
+    "express": "^4.19.2",
+    "leaflet": "^1.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
+    "react-leaflet-cluster": "^2.1.0",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.5",
+    "vite": "^8.2.1"
+  }
+}
