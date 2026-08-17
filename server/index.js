@@ -36,6 +36,7 @@ function mapPhoto(p) {
     width:         p.width,
     height:        p.height,
     filesize:      p.filesize,
+    starred:       p.starred === 1,
     thumb_url:     posterUrl(p.thumb_path),
     preview_url:   posterUrl(p.preview_path),
   };
@@ -44,9 +45,7 @@ function mapPhoto(p) {
 function badRequest(res, msg) { res.status(400).json({ error: msg }); }
 function notFound(res)        { res.status(404).json({ error: 'not found' }); }
 
-// Build SQL parts for the photo list query based on active filters.
-// Returns { joinSql, whereSql, params } where params covers joins then where clauses.
-function buildFilter(q, from, to, tagId, collectionId) {
+function buildFilter(q, from, to, tagId, collectionId, starred) {
   const joinParts  = [];
   const joinParams = [];
   const condParts  = [];
@@ -64,13 +63,14 @@ function buildFilter(q, from, to, tagId, collectionId) {
     condParts.push('(p.filepath LIKE ? OR p.camera_model LIKE ?)');
     condParams.push(`%${q}%`, `%${q}%`);
   }
-  if (from) { condParts.push('p.date_taken >= ?'); condParams.push(from); }
-  if (to)   { condParts.push('p.date_taken <= ?'); condParams.push(to);   }
+  if (from)         { condParts.push('p.date_taken >= ?'); condParams.push(from); }
+  if (to)           { condParts.push('p.date_taken <= ?'); condParams.push(to);   }
+  if (starred === '1') condParts.push('p.starred = 1');
 
   return {
-    joinSql: joinParts.join(' '),
+    joinSql:  joinParts.join(' '),
     whereSql: condParts.length ? `WHERE ${condParts.join(' AND ')}` : '',
-    params: [...joinParams, ...condParams],
+    params:   [...joinParams, ...condParams],
   };
 }
 
@@ -78,37 +78,67 @@ function buildFilter(q, from, to, tagId, collectionId) {
 
 app.use('/posters', express.static(posterDirAbs));
 
+// ── Ingest status (SSE) ───────────────────────────────────────────────────────
+
+app.get('/api/ingest/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type':  'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection':    'keep-alive',
+    'X-Accel-Buffering': 'no',   // prevent nginx buffering
+  });
+  res.write('retry: 3000\n\n');
+
+  const send = () => {
+    const s = db.getIngestStatus();
+    res.write(`data: ${JSON.stringify(s)}\n\n`);
+  };
+
+  send();
+  const iv = setInterval(send, 1500);
+  req.on('close', () => clearInterval(iv));
+});
+
+// ── Library stats ─────────────────────────────────────────────────────────────
+
+app.get('/api/library/stats', (_req, res) => {
+  const starred = db.raw.prepare('SELECT COUNT(*) AS n FROM photos WHERE starred = 1').get().n;
+  const years   = db.raw.prepare(
+    "SELECT strftime('%Y', date_taken) AS year, COUNT(*) AS count FROM photos WHERE date_taken IS NOT NULL GROUP BY year ORDER BY year DESC"
+  ).all();
+  res.json({
+    total: db.count(),
+    starred,
+    years,
+    tags:        db.listAllTags(),
+    collections: db.listCollections(),
+  });
+});
+
 // ── Photos ────────────────────────────────────────────────────────────────────
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, photos: db.count() });
-});
+app.get('/api/health', (_req, res) => res.json({ ok: true, photos: db.count() }));
 
 const SELECT_COLS = `
   p.id, p.thumb_path, p.preview_path, p.date_taken, p.date_imported,
-  p.camera_model, p.gps_lat, p.gps_lon, p.width, p.height, p.filesize
+  p.camera_model, p.gps_lat, p.gps_lon, p.width, p.height, p.filesize, p.starred
 `;
 
 app.get('/api/photos', (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit ?? '100', 10), 500);
   const cursor = req.query.cursor ?? null;
-  const { q, from, to, tagId, collectionId } = req.query;
+  const { q, from, to, tagId, collectionId, starred } = req.query;
 
-  const { joinSql, whereSql, params } = buildFilter(q, from, to, tagId, collectionId);
+  const { joinSql, whereSql, params } = buildFilter(q, from, to, tagId, collectionId, starred);
 
-  // Cursor condition — handles null dates correctly (NULLs sort last in DESC).
-  // When cursor_date is a real date: include photos before it AND all null-dated ones.
-  // When cursor_date is empty (we're in the null section): only null-dated with lower id.
-  let cursorSql = '';
+  let cursorSql    = '';
   const cursorParams = [];
   if (cursor) {
-    const pipeAt = cursor.lastIndexOf('|');
+    const pipeAt     = cursor.lastIndexOf('|');
     const cursorDate = cursor.slice(0, pipeAt);
     const cursorId   = parseInt(cursor.slice(pipeAt + 1), 10);
     if (cursorDate === '') {
-      cursorSql = whereSql
-        ? 'AND (p.date_taken IS NULL AND p.id < ?)'
-        : 'WHERE (p.date_taken IS NULL AND p.id < ?)';
+      cursorSql = whereSql ? 'AND (p.date_taken IS NULL AND p.id < ?)' : 'WHERE (p.date_taken IS NULL AND p.id < ?)';
       cursorParams.push(cursorId);
     } else {
       const clause = '(p.date_taken < ? OR (p.date_taken = ? AND p.id < ?) OR p.date_taken IS NULL)';
@@ -118,13 +148,12 @@ app.get('/api/photos', (req, res) => {
   }
 
   const allParams = [...params, ...cursorParams, limit + 1];
+  const sql       = `SELECT ${SELECT_COLS} FROM photos p ${joinSql} ${whereSql} ${cursorSql}
+                     ORDER BY p.date_taken DESC, p.id DESC LIMIT ?`;
+  const rows      = db.raw.prepare(sql).all(allParams);
 
-  const sql = `SELECT ${SELECT_COLS} FROM photos p ${joinSql} ${whereSql} ${cursorSql}
-               ORDER BY p.date_taken DESC, p.id DESC LIMIT ?`;
-  const rows = db.raw.prepare(sql).all(allParams);
-
-  const countSql = `SELECT COUNT(*) AS n FROM photos p ${joinSql} ${whereSql}`;
-  const total = db.raw.prepare(countSql).get(params).n;
+  const countSql  = `SELECT COUNT(*) AS n FROM photos p ${joinSql} ${whereSql}`;
+  const total     = db.raw.prepare(countSql).get(params).n;
 
   const hasMore    = rows.length > limit;
   const page       = rows.slice(0, limit);
@@ -159,6 +188,16 @@ app.get('/api/photos/:id', (req, res) => {
     tags:        db.getPhotoTags(row.id),
     collections: db.getPhotoCollections(row.id),
   });
+});
+
+app.patch('/api/photos/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if ('starred' in req.body) {
+    db.raw.prepare('UPDATE photos SET starred = ? WHERE id = ?').run(req.body.starred ? 1 : 0, id);
+  }
+  const row = db.raw.prepare('SELECT * FROM photos WHERE id = ?').get(id);
+  if (!row) return notFound(res);
+  res.json(mapPhoto(row));
 });
 
 // ── Tags ──────────────────────────────────────────────────────────────────────

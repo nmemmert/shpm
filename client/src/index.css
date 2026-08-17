@@ -16,6 +16,11 @@ body {
   min-height: 100dvh;
 }
 
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
 code {
   font-family: 'SF Mono', 'Fira Code', monospace;
   background: #1e1e1e;

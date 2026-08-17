@@ -23,17 +23,18 @@ export function openDb(dbPath) {
       phash          TEXT,
       width          INTEGER,
       height         INTEGER,
-      filesize       INTEGER
+      filesize       INTEGER,
+      starred        INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_photos_date_taken ON photos(date_taken);
     CREATE INDEX IF NOT EXISTS idx_photos_phash      ON photos(phash);
+    CREATE INDEX IF NOT EXISTS idx_photos_starred    ON photos(starred);
 
     CREATE TABLE IF NOT EXISTS collections (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT NOT NULL UNIQUE,
       description TEXT,
-      poster_path TEXT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -62,10 +63,22 @@ export function openDb(dbPath) {
       PRIMARY KEY (photo_id_a, photo_id_b),
       CHECK (photo_id_a < photo_id_b)
     );
+
+    CREATE TABLE IF NOT EXISTS ingest_status (
+      id         INTEGER PRIMARY KEY CHECK (id = 1),
+      active     INTEGER NOT NULL DEFAULT 0,
+      current    TEXT,
+      scanned    INTEGER NOT NULL DEFAULT 0,
+      errors     INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT,
+      updated_at TEXT
+    );
   `);
 
+  // Migrations for columns added after initial schema
+  try { db.exec('ALTER TABLE photos ADD COLUMN starred INTEGER NOT NULL DEFAULT 0'); } catch {}
+
   const s = {
-    // Photos
     insert:   db.prepare(`
       INSERT OR IGNORE INTO photos
         (filepath, thumb_path, preview_path, date_taken, date_imported,
@@ -78,7 +91,6 @@ export function openDb(dbPath) {
     remove:   db.prepare('DELETE FROM photos WHERE filepath = ?'),
     count:    db.prepare('SELECT COUNT(*) AS n FROM photos'),
 
-    // Tags
     tagByName:  db.prepare('SELECT id, name FROM tags WHERE name = ?'),
     tagInsert:  db.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)'),
     tagList:    db.prepare(`
@@ -92,7 +104,6 @@ export function openDb(dbPath) {
     tagAttach:  db.prepare('INSERT OR IGNORE INTO photo_tags (photo_id, tag_id) VALUES (?, ?)'),
     tagDetach:  db.prepare('DELETE FROM photo_tags WHERE photo_id = ? AND tag_id = ?'),
 
-    // Collections
     colList:    db.prepare(`
       SELECT c.id, c.name, c.description, c.created_at,
              COUNT(pc.photo_id) AS photo_count
@@ -107,13 +118,22 @@ export function openDb(dbPath) {
     colAdd:     db.prepare('INSERT OR IGNORE INTO photo_collections (photo_id, collection_id) VALUES (?, ?)'),
     colRemove:  db.prepare('DELETE FROM photo_collections WHERE photo_id = ? AND collection_id = ?'),
 
-    // Duplicates
-    dupePairs:   db.prepare(
+    dupePairs: db.prepare(
       'SELECT photo_id_a, photo_id_b, distance FROM duplicate_pairs WHERE dismissed = 0'
     ),
-    dupePairCount: db.prepare(
-      'SELECT COUNT(*) AS n FROM duplicate_pairs WHERE dismissed = 0'
-    ),
+
+    ingestGet: db.prepare('SELECT * FROM ingest_status WHERE id = 1'),
+    ingestSet: db.prepare(`
+      INSERT INTO ingest_status (id, active, current, scanned, errors, started_at, updated_at)
+      VALUES (1, @active, @current, @scanned, @errors, @started_at, @updated_at)
+      ON CONFLICT(id) DO UPDATE SET
+        active     = excluded.active,
+        current    = excluded.current,
+        scanned    = excluded.scanned,
+        errors     = excluded.errors,
+        started_at = COALESCE(ingest_status.started_at, excluded.started_at),
+        updated_at = excluded.updated_at
+    `),
   };
 
   const addTagTx = db.transaction((photoId, tagName) => {
@@ -126,29 +146,25 @@ export function openDb(dbPath) {
   return {
     raw: db,
 
-    // Photos
     insertPhoto: (row) => s.insert.run(row),
     hasPhoto:    (fp)  => !!s.exists.get(fp),
     removePhoto: (fp)  => s.remove.run(fp),
     count:       ()    => s.count.get().n,
 
-    // Tags
     addTagToPhoto:      (photoId, tagName) => addTagTx(photoId, tagName),
     removeTagFromPhoto: (photoId, tagId)   => s.tagDetach.run(photoId, tagId),
     getPhotoTags:       (photoId)          => s.tagOfPhoto.all(photoId),
     listAllTags:        ()                 => s.tagList.all(),
 
-    // Collections
     listCollections: () => s.colList.all(),
     createCollection: (name, desc) => {
       const info = s.colInsert.run(name, desc ?? null);
       return { id: info.lastInsertRowid, name, description: desc ?? null };
     },
-    addPhotoToCollection:     (photoId, colId) => s.colAdd.run(photoId, colId),
-    removePhotoFromCollection:(photoId, colId) => s.colRemove.run(photoId, colId),
-    getPhotoCollections:      (photoId)        => s.colOfPhoto.all(photoId),
+    addPhotoToCollection:      (photoId, colId) => s.colAdd.run(photoId, colId),
+    removePhotoFromCollection: (photoId, colId) => s.colRemove.run(photoId, colId),
+    getPhotoCollections:       (photoId)        => s.colOfPhoto.all(photoId),
 
-    // Duplicates
     getDupePairs: () => s.dupePairs.all(),
     dismissDuplicates: (ids) => {
       const ph = ids.map(() => '?').join(',');
@@ -157,5 +173,18 @@ export function openDb(dbPath) {
          WHERE photo_id_a IN (${ph}) AND photo_id_b IN (${ph})`
       ).run(...ids, ...ids);
     },
+
+    getIngestStatus: () =>
+      s.ingestGet.get() ?? { active: 0, current: null, scanned: 0, errors: 0 },
+
+    setIngestStatus: ({ active, current = null, scanned = 0, errors = 0 }) =>
+      s.ingestSet.run({
+        active: active ? 1 : 0,
+        current,
+        scanned,
+        errors,
+        started_at: active ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }),
   };
 }

@@ -10,7 +10,7 @@ const json = (body) => ({
 });
 
 // Library
-export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectionId } = {}) {
+export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectionId, starred } = {}) {
   const p = new URLSearchParams({ limit });
   if (cursor)       p.set('cursor',       cursor);
   if (q)            p.set('q',            q);
@@ -18,6 +18,7 @@ export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectio
   if (to)           p.set('to',           to);
   if (tagId)        p.set('tagId',        tagId);
   if (collectionId) p.set('collectionId', collectionId);
+  if (starred)      p.set('starred',      starred);
   return api(`/api/photos?${p}`);
 }
 
@@ -29,7 +30,19 @@ export function fetchMapPhotos() {
   return api('/api/photos/map');
 }
 
+export function fetchLibraryStats() {
+  return api('/api/library/stats');
+}
+
+export function toggleStar(id, starred) {
+  return api(`/api/photos/${id}`, { method: 'PATCH', ...json({ starred }) });
+}
+
 // Tags
+export function fetchTags() {
+  return api('/api/tags');
+}
+
 export function addTag(photoId, name) {
   return api(`/api/photos/${photoId}/tags`, { method: 'POST', ...json({ name }) });
 }
@@ -53,11 +66,6 @@ export function addToCollection(photoId, collectionId) {
 
 export function removeFromCollection(photoId, collectionId) {
   return api(`/api/photos/${photoId}/collections/${collectionId}`, { method: 'DELETE' });
-}
-
-// Tags + collections (for filter dropdowns)
-export function fetchTags() {
-  return api('/api/tags');
 }
 
 // Duplicates

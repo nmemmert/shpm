@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { toggleStar } from '../api/photos.js';
 import DetailPanel from './DetailPanel.jsx';
 
-export default function Lightbox({ photos, index, onClose, onChange }) {
-  const [showInfo, setShowInfo] = useState(false);
+export default function Lightbox({ photos, index, onClose, onChange, onStarChange }) {
+  const [showInfo, setShowInfo]   = useState(false);
+  const [starring, setStarring]   = useState(false);
   const photo = photos[index];
 
   useEffect(() => {
@@ -38,6 +40,23 @@ export default function Lightbox({ photos, index, onClose, onChange }) {
           onClick={e => e.stopPropagation()}
           style={{ position: 'absolute', top: 0, right: 0, display: 'flex', gap: 4, padding: 10, zIndex: 10 }}
         >
+          <IconBtn
+            onClick={async () => {
+              if (starring) return;
+              setStarring(true);
+              try {
+                const updated = await toggleStar(photo.id, !photo.starred);
+                onStarChange?.(updated);
+              } finally {
+                setStarring(false);
+              }
+            }}
+            active={photo.starred}
+            title={photo.starred ? 'Unstar' : 'Star'}
+            style={{ color: photo.starred ? '#f5c518' : undefined }}
+          >
+            ★
+          </IconBtn>
           <IconBtn
             onClick={() => setShowInfo(s => !s)}
             active={showInfo}
