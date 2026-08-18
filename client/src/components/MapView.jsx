@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, Component } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
+import _MarkerClusterGroup from 'react-leaflet-cluster';
+const MarkerClusterGroup = _MarkerClusterGroup?.default ?? _MarkerClusterGroup;
 import L from 'leaflet';
 import { fetchMapPhotos } from '../api/photos.js';
 
