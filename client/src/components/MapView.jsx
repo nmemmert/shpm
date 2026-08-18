@@ -1,9 +1,21 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Component } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { fetchMapPhotos } from '../api/photos.js';
+
+class MapErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(e) { return { error: e }; }
+  render() {
+    if (this.state.error) return (
+      <div style={{ padding: 24, color: '#f87171', fontSize: 14 }}>
+        Map failed to load: {this.state.error.message}
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 // Custom dot icon — avoids Leaflet's broken default asset URLs in Vite
 const dotIcon = (color = '#4d9eff') =>
@@ -37,10 +49,14 @@ export default function MapView({ onOpenPhoto }) {
       .catch(e => setError(e.message));
   }, []);
 
+  const validPoints = useMemo(() =>
+    (points ?? []).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon)),
+  [points]);
+
   const center = useMemo(() => {
-    if (!points?.length) return [20, 0];
-    return centroid(points);
-  }, [points]);
+    if (!validPoints.length) return [20, 0];
+    return centroid(validPoints);
+  }, [validPoints]);
 
   if (error) return (
     <p style={{ color: '#f87171', padding: 24, fontSize: 13 }}>{error}</p>
@@ -50,7 +66,7 @@ export default function MapView({ onOpenPhoto }) {
     <p style={{ color: '#777', padding: 24, fontSize: 13 }}>Loading map…</p>
   );
 
-  if (points.length === 0) return (
+  if (validPoints.length === 0) return (
     <div style={{ textAlign: 'center', paddingTop: 60, color: '#777' }}>
       <p style={{ fontSize: 15, marginBottom: 8 }}>No geotagged photos.</p>
       <p style={{ fontSize: 13 }}>Photos with GPS metadata will appear here once indexed.</p>
@@ -58,6 +74,7 @@ export default function MapView({ onOpenPhoto }) {
   );
 
   return (
+    <MapErrorBoundary>
     <div style={{ height: 'calc(100vh - 52px)' }}>
       <MapContainer
         center={center}
@@ -71,7 +88,7 @@ export default function MapView({ onOpenPhoto }) {
         />
 
         <MarkerClusterGroup chunkedLoading>
-          {points.map(p => (
+          {validPoints.map(p => (
             <Marker key={p.id} position={[p.lat, p.lon]} icon={ICON}>
               <Popup maxWidth={220} className="luma-popup">
                 <div style={{ margin: 0, padding: 0 }}>
@@ -101,5 +118,6 @@ export default function MapView({ onOpenPhoto }) {
         </MarkerClusterGroup>
       </MapContainer>
     </div>
+    </MapErrorBoundary>
   );
 }
