@@ -2,8 +2,13 @@ import { useState, useEffect } from 'react';
 import {
   fetchSettings, patchSettings,
   fetchWatchFolders, addWatchFolder, removeWatchFolder, toggleWatchFolder,
-  clearDismissals, fetchDirBrowser,
+  clearDismissals, fetchDirBrowser, triggerSync,
 } from '../api/photos.js';
+
+const EMPTY_SYNC = {
+  icloud: { running: false, lines: [], exitCode: null, startedAt: null, error: null },
+  amazon: { running: false, lines: [], exitCode: null, startedAt: null, error: null },
+};
 
 export default function SettingsPanel({ onClose }) {
   const [settings, setSettings]   = useState(null);
@@ -11,6 +16,10 @@ export default function SettingsPanel({ onClose }) {
   const [newPath, setNewPath]     = useState('');
   const [saving, setSaving]       = useState(false);
   const [cleared, setCleared]     = useState(false);
+  const [syncStatus, setSyncStatus] = useState(EMPTY_SYNC);
+  const [syncError, setSyncError]   = useState({});
+  const [amazonPath, setAmazonPath] = useState('');
+  const [amazonAdded, setAmazonAdded] = useState(false);
 
   // Folder browser
   const [browseOpen,   setBrowseOpen]   = useState(false);
@@ -20,6 +29,12 @@ export default function SettingsPanel({ onClose }) {
   useEffect(() => {
     fetchSettings().then(setSettings);
     fetchWatchFolders().then(setFolders);
+  }, []);
+
+  useEffect(() => {
+    const es = new EventSource('/api/sync/stream');
+    es.onmessage = (e) => setSyncStatus(JSON.parse(e.data));
+    return () => es.close();
   }, []);
 
   // Debounced setting save
@@ -83,6 +98,25 @@ export default function SettingsPanel({ onClose }) {
     await clearDismissals();
     setCleared(true);
     setTimeout(() => setCleared(false), 2000);
+  }
+
+  async function handleSync(source) {
+    setSyncError(prev => ({ ...prev, [source]: null }));
+    try {
+      await triggerSync(source);
+    } catch (e) {
+      setSyncError(prev => ({ ...prev, [source]: e.message }));
+    }
+  }
+
+  async function handleAmazonImport() {
+    const p = amazonPath.trim();
+    if (!p) return;
+    const updated = await addWatchFolder(p);
+    setFolders(updated);
+    setAmazonPath('');
+    setAmazonAdded(true);
+    setTimeout(() => setAmazonAdded(false), 3000);
   }
 
   return (
@@ -314,6 +348,93 @@ export default function SettingsPanel({ onClose }) {
               </p>
             </Section>
 
+            {/* ── Photo Sync ── */}
+            <Section title="Photo Sync">
+
+              {/* iCloud Photos */}
+              <SyncSourceHeader label="iCloud Photos" />
+              <ToggleSetting
+                label="Enabled"
+                value={!!settings.icloud_enabled}
+                onChange={v => handleSetting('icloud_enabled', v)}
+              />
+              {settings.icloud_enabled && (
+                <>
+                  <TextSetting
+                    label="Apple ID"
+                    value={settings.icloud_apple_id}
+                    placeholder="you@icloud.com"
+                    onChange={v => handleSetting('icloud_apple_id', v)}
+                  />
+                  <TextSetting
+                    label="Password"
+                    type="password"
+                    value={settings.icloud_password}
+                    placeholder="optional after first auth"
+                    onChange={v => handleSetting('icloud_password', v)}
+                  />
+                  <TextSetting
+                    label="Download to"
+                    value={settings.icloud_dest}
+                    placeholder="/photos/icloud"
+                    onChange={v => handleSetting('icloud_dest', v)}
+                  />
+                  <TextSetting
+                    label="Cookie dir"
+                    value={settings.icloud_cookie_dir}
+                    placeholder="/data/icloud-cookies"
+                    onChange={v => handleSetting('icloud_cookie_dir', v)}
+                  />
+                  <SyncControls
+                    job={syncStatus.icloud}
+                    error={syncError.icloud}
+                    onSync={() => handleSync('icloud')}
+                  />
+                  <p style={{ fontSize: 11, color: '#3a3a3a', padding: '2px 18px 4px', lineHeight: 1.5 }}>
+                    First run: <code style={{ color: '#555' }}>docker exec &lt;container&gt; icloudpd --username &lt;id&gt; --auth-only --cookie-directory /data/icloud-cookies</code>
+                  </p>
+                </>
+              )}
+
+              {/* Amazon Photos */}
+              <SyncSourceHeader label="Amazon Photos — one-time import" />
+              <p style={{ fontSize: 11, color: '#3a3a3a', padding: '0 18px 8px', lineHeight: 1.6 }}>
+                Request your library at amazon.com → Account → Request Your Data → Amazon Photos.
+                Extract the ZIP, copy to your server, then add the folder path here.
+              </p>
+              <div style={{ display: 'flex', gap: 6, padding: '0 18px 6px' }}>
+                <input
+                  value={amazonPath}
+                  onChange={e => setAmazonPath(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAmazonImport()}
+                  placeholder="/photos/amazon-export"
+                  style={{
+                    flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a',
+                    borderRadius: 5, color: '#ccc', fontSize: 11,
+                    padding: '5px 8px', outline: 'none', fontFamily: 'monospace',
+                  }}
+                />
+                <button
+                  onClick={handleAmazonImport}
+                  disabled={!amazonPath.trim()}
+                  style={{
+                    background: amazonAdded ? '#1a2f1a' : amazonPath.trim() ? '#1e2f45' : '#181818',
+                    border: '1px solid ' + (amazonAdded ? '#2a4a2a' : amazonPath.trim() ? '#2a4a6a' : '#222'),
+                    borderRadius: 5,
+                    color: amazonAdded ? '#4a9a4a' : amazonPath.trim() ? '#7ab8f5' : '#333',
+                    cursor: amazonPath.trim() ? 'pointer' : 'default',
+                    padding: '5px 12px', fontSize: 12, whiteSpace: 'nowrap',
+                  }}
+                >
+                  {amazonAdded ? '✓ Added' : 'Add & Index'}
+                </button>
+              </div>
+
+              <p style={{ fontSize: 11, color: '#3a3a3a', padding: '4px 18px 0', lineHeight: 1.5 }}>
+                Also add the iCloud download folder to Watch Folders once sync runs.
+              </p>
+            </Section>
+
             {/* ── Danger Zone ── */}
             <Section title="Danger Zone">
               <div style={{ padding: '4px 18px' }}>
@@ -387,5 +508,150 @@ function DangerBtn({ onClick, children }) {
     >
       {children}
     </button>
+  );
+}
+
+function SyncSourceHeader({ label }) {
+  return (
+    <div style={{
+      fontSize: 11, color: '#555', fontWeight: 600,
+      padding: '10px 18px 4px', borderTop: '1px solid #1a1a1a', marginTop: 6,
+    }}>
+      {label}
+    </div>
+  );
+}
+
+function ToggleSetting({ label, value, onChange }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 18px' }}>
+      <span style={{ flex: 1, fontSize: 13, color: '#aaa' }}>{label}</span>
+      <button
+        onClick={() => onChange(!value)}
+        style={{
+          width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+          background: value ? '#1e3a5f' : '#1a1a1a',
+          border: '1px solid ' + (value ? '#2a5a9f' : '#2a2a2a'),
+          cursor: 'pointer', padding: 0, position: 'relative',
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 2,
+          left: value ? 18 : 2,
+          width: 14, height: 14, borderRadius: '50%',
+          background: value ? '#7ab8f5' : '#444',
+          transition: 'left 0.15s',
+          display: 'block',
+        }} />
+      </button>
+    </div>
+  );
+}
+
+function TextSetting({ label, value, placeholder, type = 'text', onChange }) {
+  const [local, setLocal] = useState(value ?? '');
+  // Sync if parent value changes (e.g. after save)
+  useState(() => setLocal(value ?? ''));
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 18px' }}>
+      <span style={{ flex: 1, fontSize: 13, color: '#aaa', flexShrink: 0 }}>{label}</span>
+      <input
+        type={type}
+        value={local}
+        placeholder={placeholder}
+        onChange={e => setLocal(e.target.value)}
+        onBlur={() => onChange(local)}
+        onKeyDown={e => e.key === 'Enter' && onChange(local)}
+        style={{
+          width: 170, background: '#1a1a1a', border: '1px solid #2a2a2a',
+          borderRadius: 5, color: '#ccc', fontSize: 11,
+          padding: '4px 8px', outline: 'none', fontFamily: 'monospace',
+        }}
+      />
+    </div>
+  );
+}
+
+function SyncControls({ job, error, onSync }) {
+  const [showLog, setShowLog] = useState(false);
+
+  // Auto-show log while running
+  const wasRunning = job.running;
+  if (wasRunning && !showLog) setShowLog(true);
+
+  const lastRunLabel = job.startedAt
+    ? new Date(job.startedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  return (
+    <div style={{ padding: '6px 18px 2px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          onClick={onSync}
+          disabled={job.running}
+          style={{
+            background: job.running ? '#141414' : '#1e2f45',
+            border: '1px solid ' + (job.running ? '#222' : '#2a4a6a'),
+            borderRadius: 5, color: job.running ? '#444' : '#7ab8f5',
+            cursor: job.running ? 'default' : 'pointer',
+            padding: '5px 14px', fontSize: 12,
+          }}
+        >
+          {job.running ? 'Syncing…' : 'Sync Now'}
+        </button>
+
+        {job.running && (
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: '#4d9eff', display: 'inline-block',
+            animation: 'pulse-dot 1.4s ease-in-out infinite',
+          }} />
+        )}
+
+        {lastRunLabel && !job.running && (
+          <span style={{ fontSize: 11, color: '#3a3a3a' }}>
+            Last: {lastRunLabel}
+            {job.exitCode !== null && (
+              <span style={{ color: job.exitCode === 0 ? '#4a7a4a' : '#7a3a3a', marginLeft: 6 }}>
+                {job.exitCode === 0 ? '✓' : `✗ (${job.exitCode})`}
+              </span>
+            )}
+          </span>
+        )}
+
+        {job.lines.length > 0 && (
+          <button
+            onClick={() => setShowLog(s => !s)}
+            style={{
+              background: 'none', border: 'none', color: '#3a3a3a',
+              cursor: 'pointer', fontSize: 11, marginLeft: 'auto', padding: 0,
+            }}
+          >
+            {showLog ? 'hide log' : 'show log'}
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <p style={{ fontSize: 11, color: '#884444', margin: '4px 0 0' }}>{error}</p>
+      )}
+
+      {showLog && job.lines.length > 0 && (
+        <div style={{
+          marginTop: 6, background: '#080808', border: '1px solid #1a1a1a',
+          borderRadius: 4, padding: '6px 8px',
+          maxHeight: 140, overflowY: 'auto',
+          fontFamily: 'monospace', fontSize: 10, color: '#555',
+          lineHeight: 1.6,
+        }}>
+          {job.lines.slice(-60).map((line, i) => (
+            <div key={i} style={{ color: line.startsWith('Error') || line.startsWith('  Error') ? '#884444' : '#555' }}>
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

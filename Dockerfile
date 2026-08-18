@@ -13,7 +13,8 @@ RUN npm run build
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM node:22-alpine
 
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 py3-pip make g++ && \
+    pip3 install icloudpd --break-system-packages
 
 WORKDIR /app
 
@@ -24,6 +25,7 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY worker ./worker
 COPY server ./server
+COPY scripts ./scripts
 
 ENV PORT=3000 \
     DB_PATH=/data/library.db \

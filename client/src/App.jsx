@@ -149,9 +149,9 @@ export default function App() {
             style={{
               background: showSettings ? '#1e2a3a' : 'transparent',
               border: 'none', borderRadius: 6,
-              color: showSettings ? '#7ab8f5' : '#555',
-              cursor: 'pointer', fontSize: 16,
-              width: 32, height: 32,
+              color: showSettings ? '#7ab8f5' : '#888',
+              cursor: 'pointer', fontSize: 20,
+              width: 38, height: 38,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >

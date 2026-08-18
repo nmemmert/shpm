@@ -1,0 +1,23 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="100" height="100" rx="22" fill="#0d0d0d"/>
+
+  <!-- Outer lens ring -->
+  <circle cx="50" cy="50" r="40" fill="none" stroke="#4d9eff" stroke-width="1.5" opacity="0.22"/>
+
+  <!-- 6 aperture blades -->
+  <g transform="translate(50,50)" fill="#4d9eff">
+    <polygon points="-11,-33 11,-33 5,-13 -5,-13" transform="rotate(0)"/>
+    <polygon points="-11,-33 11,-33 5,-13 -5,-13" transform="rotate(60)"/>
+    <polygon points="-11,-33 11,-33 5,-13 -5,-13" transform="rotate(120)"/>
+    <polygon points="-11,-33 11,-33 5,-13 -5,-13" transform="rotate(180)"/>
+    <polygon points="-11,-33 11,-33 5,-13 -5,-13" transform="rotate(240)"/>
+    <polygon points="-11,-33 11,-33 5,-13 -5,-13" transform="rotate(300)"/>
+  </g>
+
+  <!-- Center opening -->
+  <circle cx="50" cy="50" r="10" fill="#0d0d0d"/>
+
+  <!-- Lens highlight -->
+  <ellipse cx="43" cy="37" rx="5" ry="3.5" fill="white" opacity="0.13" transform="rotate(-30 43 37)"/>
+</svg>

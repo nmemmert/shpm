@@ -104,6 +104,11 @@ export function clearDismissals() {
   return api('/api/admin/clear-dismissals', { method: 'POST' });
 }
 
+// Photo sync
+export function triggerSync(source) {
+  return api(`/api/sync/${source}`, { method: 'POST' });
+}
+
 // Duplicates
 export function fetchDuplicates() {
   return api('/api/duplicates');

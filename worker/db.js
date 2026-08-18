@@ -3,12 +3,25 @@ import path from 'path';
 import fs from 'fs';
 
 const SETTING_DEFAULTS = {
-  thumb_size:       '400',
-  thumb_quality:    '80',
-  preview_size:     '1600',
-  preview_quality:  '85',
-  dedupe_threshold: '10',
+  thumb_size:        '400',
+  thumb_quality:     '80',
+  preview_size:      '1600',
+  preview_quality:   '85',
+  dedupe_threshold:  '10',
+  // iCloud Photos sync
+  icloud_enabled:    '0',
+  icloud_apple_id:   '',
+  icloud_password:   '',
+  icloud_dest:       '/photos/icloud',
+  icloud_cookie_dir: '/data/icloud-cookies',
+  // Amazon Photos sync
+  amazon_enabled:     '0',
+  amazon_cookie_file: '',
+  amazon_dest:        '/photos/amazon',
 };
+
+const NUMERIC_SETTINGS = new Set(['thumb_size', 'thumb_quality', 'preview_size', 'preview_quality', 'dedupe_threshold']);
+const BOOL_SETTINGS    = new Set(['icloud_enabled', 'amazon_enabled']);
 
 export function openDb(dbPath) {
   fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
@@ -218,8 +231,8 @@ export function openDb(dbPath) {
       const rows = s.settingsAll.all();
       const out = { ...SETTING_DEFAULTS };
       for (const { key, value } of rows) out[key] = value;
-      // Parse numerics
-      for (const k of Object.keys(SETTING_DEFAULTS)) out[k] = parseInt(out[k], 10);
+      for (const k of NUMERIC_SETTINGS) out[k] = parseInt(out[k], 10);
+      for (const k of BOOL_SETTINGS)    out[k] = out[k] === '1' || out[k] === true;
       return out;
     },
     setSetting: (key, value) => s.settingsSet.run(key, String(value)),

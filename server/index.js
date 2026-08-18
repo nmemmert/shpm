@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import { openDb } from '../worker/db.js';
 import { scan, getGroups } from './dedupe.js';
 
@@ -16,6 +17,57 @@ const db           = openDb(DB_PATH);
 const posterDirAbs = path.resolve(POSTER_DIR);
 
 app.use(express.json());
+
+// ── Photo Sync state ──────────────────────────────────────────────────────────
+
+const syncJobs = {
+  icloud: { running: false, lines: [], exitCode: null, startedAt: null, error: null },
+  amazon: { running: false, lines: [], exitCode: null, startedAt: null, error: null },
+};
+const syncClients = new Set();
+
+function pushSyncUpdate() {
+  const payload = JSON.stringify(syncJobs);
+  for (const res of syncClients) res.write(`data: ${payload}\n\n`);
+}
+
+function runSync(source, command, args) {
+  const job = syncJobs[source];
+  if (job.running) return false;
+  job.running  = true;
+  job.lines    = [];
+  job.exitCode = null;
+  job.startedAt = new Date().toISOString();
+  job.error    = null;
+  pushSyncUpdate();
+
+  const proc = spawn(command, args, { stdio: 'pipe' });
+
+  const onData = (chunk) => {
+    const newLines = chunk.toString().split('\n').filter(Boolean);
+    job.lines.push(...newLines);
+    if (job.lines.length > 500) job.lines = job.lines.slice(-500);
+    pushSyncUpdate();
+  };
+  proc.stdout.on('data', onData);
+  proc.stderr.on('data', onData);
+
+  proc.on('close', (code) => {
+    job.running  = false;
+    job.exitCode = code;
+    if (code !== 0) job.error = `Exited with code ${code}`;
+    pushSyncUpdate();
+  });
+
+  proc.on('error', (err) => {
+    job.running = false;
+    job.error   = err.message;
+    job.lines.push(`Error: ${err.message}`);
+    pushSyncUpdate();
+  });
+
+  return true;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -285,16 +337,72 @@ app.post('/api/duplicates/dismiss', (req, res) => {
   res.sendStatus(204);
 });
 
+// ── Photo Sync ────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type':  'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection':    'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('retry: 3000\n\n');
+  res.write(`data: ${JSON.stringify(syncJobs)}\n\n`);
+  syncClients.add(res);
+  req.on('close', () => syncClients.delete(res));
+});
+
+app.post('/api/sync/icloud', (_req, res) => {
+  const s = db.getSettings();
+  if (!s.icloud_apple_id) return badRequest(res, 'Apple ID not configured');
+
+  const args = [
+    '--username',         s.icloud_apple_id,
+    '--directory',        s.icloud_dest,
+    '--cookie-directory', s.icloud_cookie_dir,
+    '--no-progress',
+  ];
+  if (s.icloud_password) args.push('--password', s.icloud_password);
+
+  if (!runSync('icloud', 'icloudpd', args)) {
+    return res.status(409).json({ error: 'Sync already running' });
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/sync/amazon', (_req, res) => {
+  const s = db.getSettings();
+  if (!s.amazon_cookie_file) return badRequest(res, 'Cookie file not configured');
+
+  const scriptPath = path.join(path.dirname(__dirname), 'scripts', 'amazon_sync.py');
+  if (!fs.existsSync(scriptPath)) {
+    return res.status(500).json({ error: 'amazon_sync.py not found in /app/scripts/' });
+  }
+
+  if (!runSync('amazon', 'python3', [scriptPath, s.amazon_cookie_file, s.amazon_dest])) {
+    return res.status(409).json({ error: 'Sync already running' });
+  }
+  res.json({ ok: true });
+});
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 app.get('/api/settings', (_req, res) => res.json(db.getSettings()));
 
+const NUMERIC_SETTING_KEYS = new Set(['thumb_size', 'thumb_quality', 'preview_size', 'preview_quality', 'dedupe_threshold']);
+const STRING_SETTING_KEYS  = new Set(['icloud_apple_id', 'icloud_password', 'icloud_dest', 'icloud_cookie_dir', 'amazon_cookie_file', 'amazon_dest']);
+const BOOL_SETTING_KEYS    = new Set(['icloud_enabled', 'amazon_enabled']);
+
 app.patch('/api/settings', (req, res) => {
-  const allowed = new Set(['thumb_size', 'thumb_quality', 'preview_size', 'preview_quality', 'dedupe_threshold']);
   for (const [key, value] of Object.entries(req.body)) {
-    if (!allowed.has(key)) continue;
-    const n = parseInt(value, 10);
-    if (!isNaN(n)) db.setSetting(key, n);
+    if (NUMERIC_SETTING_KEYS.has(key)) {
+      const n = parseInt(value, 10);
+      if (!isNaN(n)) db.setSetting(key, n);
+    } else if (STRING_SETTING_KEYS.has(key)) {
+      db.setSetting(key, String(value ?? ''));
+    } else if (BOOL_SETTING_KEYS.has(key)) {
+      db.setSetting(key, value ? '1' : '0');
+    }
   }
   res.json(db.getSettings());
 });
