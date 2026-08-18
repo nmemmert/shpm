@@ -10,8 +10,15 @@ const POSTER_DIR = process.env.POSTER_DIR ?? './data/posters';
 
 const db = openDb(DB_PATH);
 
+// Load all known paths into memory once so chokidar's initial 'add' burst
+// for an already-indexed library costs one bulk query instead of N serial
+// DB lookups through the drain queue.
+const indexed = new Set(
+  db.raw.prepare('SELECT filepath FROM photos').all().map(r => r.filepath)
+);
+
 console.log(`[worker] watching ${path.resolve(PHOTO_DIR)}`);
-console.log(`[worker] db at ${path.resolve(DB_PATH)} (${db.count()} photos indexed)`);
+console.log(`[worker] db at ${path.resolve(DB_PATH)} (${indexed.size} photos indexed)`);
 
 const queue = [];
 let busy    = false;
@@ -28,6 +35,7 @@ async function drain() {
     const fp = queue.shift();
     try {
       await ingestFile(fp, db, POSTER_DIR);
+      indexed.add(fp);
       scanned++;
       db.setIngestStatus({ active: true, current: path.basename(fp), scanned, errors });
     } catch (err) {
@@ -50,12 +58,16 @@ const watcher = chokidar.watch(PHOTO_DIR, {
 
 watcher.on('add', (fp) => {
   if (!isSupported(fp)) return;
-  queue.push(path.resolve(fp));
+  const resolved = path.resolve(fp);
+  if (indexed.has(resolved)) return;   // already in DB — skip entirely
+  queue.push(resolved);
   drain();
 });
 
 watcher.on('unlink', (fp) => {
-  db.removePhoto(path.resolve(fp));
+  const resolved = path.resolve(fp);
+  indexed.delete(resolved);
+  db.removePhoto(resolved);
   console.log(`[worker] removed ${path.basename(fp)}`);
 });
 
