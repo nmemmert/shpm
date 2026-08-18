@@ -10,6 +10,7 @@ import SettingsPanel from './components/SettingsPanel.jsx';
 import { lazy, Suspense } from 'react';
 const MapView      = lazy(() => import('./components/MapView.jsx'));
 const MemoriesView = lazy(() => import('./components/MemoriesView.jsx'));
+const VideosView   = lazy(() => import('./components/VideosView.jsx'));
 
 const EMPTY_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
 const SIDEBAR_W = 210;
@@ -126,6 +127,7 @@ export default function App() {
               </span>
             )}
           </Tab>
+          <Tab active={view === 'videos'}     onClick={() => setView('videos')}>Videos</Tab>
           <Tab active={view === 'memories'}   onClick={() => setView('memories')}>Memories</Tab>
           <Tab active={view === 'map'}        onClick={() => setView('map')}>Map</Tab>
           <Tab active={view === 'duplicates'} onClick={() => setView('duplicates')}>
@@ -214,6 +216,13 @@ export default function App() {
                 </p>
               )}
             </>
+          )}
+
+          {/* Videos */}
+          {view === 'videos' && (
+            <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
+              <VideosView />
+            </Suspense>
           )}
 
           {/* Memories */}

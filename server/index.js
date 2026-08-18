@@ -154,8 +154,17 @@ function mapPhoto(p) {
     place_country: p.place_country ?? null,
     thumb_url:     posterUrl(p.thumb_path),
     preview_url:   posterUrl(p.preview_path),
+    media_type:    p.media_type    ?? 'photo',
+    duration:      p.duration      ?? null,
   };
 }
+
+const VIDEO_MIME = {
+  '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4',
+  '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+  '.webm': 'video/webm', '.3gp': 'video/3gpp',
+};
+function videoMime(fp) { return VIDEO_MIME[path.extname(fp).toLowerCase()] ?? 'video/octet-stream'; }
 
 function badRequest(res, msg) { res.status(400).json({ error: msg }); }
 function notFound(res)        { res.status(404).json({ error: 'not found' }); }
@@ -242,7 +251,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, photos: db.count() })
 const SELECT_COLS = `
   p.id, p.thumb_path, p.preview_path, p.date_taken, p.date_imported,
   p.camera_model, p.gps_lat, p.gps_lon, p.width, p.height, p.filesize,
-  p.starred, p.place_city, p.place_country
+  p.starred, p.place_city, p.place_country, p.media_type, p.duration
 `;
 
 app.get('/api/photos', (req, res) => {
@@ -252,6 +261,10 @@ app.get('/api/photos', (req, res) => {
 
   const { joinSql, whereSql, params } = buildFilter(q, from, to, tagId, collectionId, starred, city);
 
+  // Exclude videos from the photo library — they have their own tab
+  const photoOnlyClause = "(p.media_type IS NULL OR p.media_type = 'photo')";
+  const fullWhere = whereSql ? `${whereSql} AND ${photoOnlyClause}` : `WHERE ${photoOnlyClause}`;
+
   let cursorSql    = '';
   const cursorParams = [];
   if (cursor) {
@@ -259,21 +272,20 @@ app.get('/api/photos', (req, res) => {
     const cursorDate = cursor.slice(0, pipeAt);
     const cursorId   = parseInt(cursor.slice(pipeAt + 1), 10);
     if (cursorDate === '') {
-      cursorSql = whereSql ? 'AND (p.date_taken IS NULL AND p.id < ?)' : 'WHERE (p.date_taken IS NULL AND p.id < ?)';
+      cursorSql = `AND (p.date_taken IS NULL AND p.id < ?)`;
       cursorParams.push(cursorId);
     } else {
-      const clause = '(p.date_taken < ? OR (p.date_taken = ? AND p.id < ?) OR p.date_taken IS NULL)';
-      cursorSql = whereSql ? `AND ${clause}` : `WHERE ${clause}`;
+      cursorSql = `AND (p.date_taken < ? OR (p.date_taken = ? AND p.id < ?) OR p.date_taken IS NULL)`;
       cursorParams.push(cursorDate, cursorDate, cursorId);
     }
   }
 
   const allParams = [...params, ...cursorParams, limit + 1];
-  const sql       = `SELECT ${SELECT_COLS} FROM photos p ${joinSql} ${whereSql} ${cursorSql}
+  const sql       = `SELECT ${SELECT_COLS} FROM photos p ${joinSql} ${fullWhere} ${cursorSql}
                      ORDER BY p.date_taken DESC, p.id DESC LIMIT ?`;
   const rows      = db.raw.prepare(sql).all(allParams);
 
-  const countSql  = `SELECT COUNT(*) AS n FROM photos p ${joinSql} ${whereSql}`;
+  const countSql  = `SELECT COUNT(*) AS n FROM photos p ${joinSql} ${fullWhere}`;
   const total     = db.raw.prepare(countSql).get(params).n;
 
   const hasMore    = rows.length > limit;
@@ -499,6 +511,45 @@ app.patch('/api/watch-folders/:id', (req, res) => {
 app.post('/api/admin/clear-dismissals', (_req, res) => {
   db.raw.prepare('UPDATE duplicate_pairs SET dismissed = 0').run();
   res.sendStatus(204);
+});
+
+// ── Videos ────────────────────────────────────────────────────────────────────
+
+app.get('/api/videos', (_req, res) => {
+  const rows = db.raw.prepare(`
+    SELECT ${SELECT_COLS} FROM photos p
+    WHERE p.media_type = 'video'
+    ORDER BY p.date_taken DESC, p.id DESC
+  `).all();
+  res.json({ videos: rows.map(mapPhoto), total: rows.length });
+});
+
+app.get('/api/photos/:id/video', (req, res) => {
+  const id  = parseInt(req.params.id, 10);
+  const row = db.raw.prepare('SELECT filepath, media_type FROM photos WHERE id = ?').get(id);
+  if (!row || row.media_type !== 'video') return notFound(res);
+  if (!fs.existsSync(row.filepath)) return notFound(res);
+
+  const total = fs.statSync(row.filepath).size;
+  const mime  = videoMime(row.filepath);
+  const range = req.headers.range;
+
+  if (!range) {
+    res.writeHead(200, { 'Content-Length': total, 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
+    fs.createReadStream(row.filepath).pipe(res);
+    return;
+  }
+
+  const [s, e] = range.replace(/bytes=/, '').split('-');
+  const start  = parseInt(s, 10);
+  const end    = e ? parseInt(e, 10) : Math.min(start + 4 * 1024 * 1024 - 1, total - 1);
+  res.writeHead(206, {
+    'Content-Range':  `bytes ${start}-${end}/${total}`,
+    'Accept-Ranges':  'bytes',
+    'Content-Length': end - start + 1,
+    'Content-Type':   mime,
+  });
+  fs.createReadStream(row.filepath, { start, end }).pipe(res);
 });
 
 // ── Memories (photos on this day) ─────────────────────────────────────────────

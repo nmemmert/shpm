@@ -13,7 +13,7 @@ RUN npm run build
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM node:22-alpine
 
-RUN apk add --no-cache python3 py3-pip make g++ && \
+RUN apk add --no-cache python3 py3-pip make g++ ffmpeg && \
     pip3 install icloudpd --break-system-packages
 
 WORKDIR /app

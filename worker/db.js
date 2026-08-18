@@ -113,8 +113,11 @@ export function openDb(dbPath) {
   try { db.exec('ALTER TABLE photos ADD COLUMN starred INTEGER NOT NULL DEFAULT 0'); } catch {}
   try { db.exec('ALTER TABLE photos ADD COLUMN place_city    TEXT'); } catch {}
   try { db.exec('ALTER TABLE photos ADD COLUMN place_country TEXT'); } catch {}
-  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_starred    ON photos(starred)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_place_city ON photos(place_city)');
+  try { db.exec("ALTER TABLE photos ADD COLUMN media_type TEXT NOT NULL DEFAULT 'photo'"); } catch {}
+  try { db.exec('ALTER TABLE photos ADD COLUMN duration REAL'); } catch {}
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_starred     ON photos(starred)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_place_city  ON photos(place_city)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_media_type  ON photos(media_type)');
 
   // Seed default settings
   const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
@@ -125,11 +128,11 @@ export function openDb(dbPath) {
       INSERT OR IGNORE INTO photos
         (filepath, thumb_path, preview_path, date_taken, date_imported,
          camera_model, gps_lat, gps_lon, phash, width, height, filesize,
-         place_city, place_country)
+         place_city, place_country, media_type, duration)
       VALUES
         (@filepath, @thumb_path, @preview_path, @date_taken, @date_imported,
          @camera_model, @gps_lat, @gps_lon, @phash, @width, @height, @filesize,
-         @place_city, @place_country)
+         @place_city, @place_country, @media_type, @duration)
     `),
     exists:   db.prepare('SELECT 1 FROM photos WHERE filepath = ? LIMIT 1'),
     remove:   db.prepare('DELETE FROM photos WHERE filepath = ?'),

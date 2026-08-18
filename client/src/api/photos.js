@@ -109,6 +109,11 @@ export function triggerSync(source) {
   return api(`/api/sync/${source}`, { method: 'POST' });
 }
 
+// Videos
+export function fetchVideos() {
+  return api('/api/videos');
+}
+
 // Memories
 export function fetchMemories() {
   const d = new Date();
