@@ -3,8 +3,10 @@ services:
   server:
     image: ghcr.io/nmemmert/shpm:main
     restart: unless-stopped
+    networks:
+      - luma_net
     ports:
-      - "3000:3000"
+      - "3700:3000"
     environment:
       PORT: "3000"
       DB_PATH: /data/library.db
@@ -27,6 +29,8 @@ services:
   worker:
     image: ghcr.io/nmemmert/shpm:main
     restart: unless-stopped
+    networks:
+      - luma_net
     command: ["node", "worker/index.js"]
     environment:
       DB_PATH: /data/library.db
@@ -43,6 +47,10 @@ services:
     depends_on:
       server:
         condition: service_healthy
+
+networks:
+  luma_net:
+    external: true
 
 volumes:
   luma_data:
