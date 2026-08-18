@@ -6,15 +6,23 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { openDb } from '../worker/db.js';
 import { scan, getGroups } from './dedupe.js';
+import { scanMusicLibrary, initMusicTable, musicScanActive } from '../worker/scanMusic.js';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
 const PORT       = parseInt(process.env.PORT       ?? '3000', 10);
 const DB_PATH    = process.env.DB_PATH    ?? './data/library.db';
 const POSTER_DIR = process.env.POSTER_DIR ?? './data/posters';
+const MUSIC_DIR  = process.env.MUSIC_DIR  ?? null;
 
 const app          = express();
 const db           = openDb(DB_PATH);
 const posterDirAbs = path.resolve(POSTER_DIR);
+
+// Music table + background scan on startup
+initMusicTable(db);
+if (MUSIC_DIR) {
+  scanMusicLibrary(MUSIC_DIR, db).catch(() => {});
+}
 
 app.use(express.json());
 
@@ -744,6 +752,77 @@ app.get('/api/fs/browse', (req, res) => {
 });
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────
+
+// ── Music API ─────────────────────────────────────────────────────────────────
+
+const AUDIO_MIME = {
+  '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.m4a': 'audio/mp4',
+  '.ogg': 'audio/ogg',  '.wav':  'audio/wav',  '.aac': 'audio/aac',
+  '.opus': 'audio/ogg', '.wma': 'audio/x-ms-wma',
+};
+
+// GET /api/music?mood=upbeat — returns up to 60 shuffled tracks for that mood
+app.get('/api/music', (req, res) => {
+  if (!MUSIC_DIR) return res.json({ tracks: [], scanning: false });
+  const mood  = req.query.mood ?? 'upbeat';
+  const count = db.raw.prepare('SELECT COUNT(*) AS n FROM music').get().n;
+  // mood-specific + general pool (untagged), shuffled
+  const tracks = db.raw.prepare(`
+    SELECT id, title, artist, album, duration, mood FROM music
+    WHERE mood = ? OR mood = 'general'
+    ORDER BY RANDOM()
+    LIMIT 60
+  `).all(mood);
+  res.json({ tracks, total: count, scanning: musicScanActive });
+});
+
+// GET /api/music/scan-status
+app.get('/api/music/scan-status', (req, res) => {
+  const count = db.raw.prepare('SELECT COUNT(*) AS n FROM music').get().n;
+  res.json({ count, scanning: musicScanActive, enabled: !!MUSIC_DIR });
+});
+
+// POST /api/music/scan — trigger a rescan
+app.post('/api/music/scan', (req, res) => {
+  if (!MUSIC_DIR) return res.status(400).json({ error: 'MUSIC_DIR not configured' });
+  if (musicScanActive) return res.json({ started: false });
+  scanMusicLibrary(MUSIC_DIR, db).catch(() => {});
+  res.json({ started: true });
+});
+
+// GET /api/music/stream/:id — stream an audio file (with range support for seeking)
+app.get('/api/music/stream/:id', (req, res) => {
+  const row = db.raw.prepare('SELECT filepath FROM music WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).end();
+  const fp = row.filepath;
+  // Safety: must be under MUSIC_DIR
+  if (MUSIC_DIR && !fp.startsWith(path.resolve(MUSIC_DIR))) return res.status(403).end();
+  let stat;
+  try { stat = fs.statSync(fp); } catch { return res.status(404).end(); }
+  const contentType = AUDIO_MIME[path.extname(fp).toLowerCase()] ?? 'audio/mpeg';
+  const range = req.headers.range;
+  if (range) {
+    const [s, e] = range.replace('bytes=', '').split('-');
+    const start = parseInt(s, 10);
+    const end   = e ? parseInt(e, 10) : stat.size - 1;
+    res.writeHead(206, {
+      'Content-Range':  `bytes ${start}-${end}/${stat.size}`,
+      'Accept-Ranges':  'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type':   contentType,
+    });
+    fs.createReadStream(fp, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type':   contentType,
+      'Accept-Ranges':  'bytes',
+    });
+    fs.createReadStream(fp).pipe(res);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const distPath = path.resolve(__dirname, '../dist');
 app.use(express.static(distPath));

@@ -11,6 +11,7 @@ services:
       PORT: "3000"
       DB_PATH: /data/library.db
       POSTER_DIR: /data/posters
+      MUSIC_DIR: /music
       NODE_ENV: production
     volumes:
       - type: volume
@@ -19,6 +20,10 @@ services:
       - type: bind
         source: /media/Plex/Gallery
         target: /photos
+      - type: bind
+        source: /DATA/Media/Music
+        target: /music
+        read_only: true
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s

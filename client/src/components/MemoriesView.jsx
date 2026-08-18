@@ -195,16 +195,30 @@ export default function MemoriesView() {
   const [ssIndex, setSsIndex]       = useState(0);
   const [opacity, setOpacity]       = useState(1);
   const [muted, setMuted]           = useState(false);
+  const [tracks, setTracks]         = useState([]);
+  const [trackIdx, setTrackIdx]     = useState(0);
+  const [scanInfo, setScanInfo]     = useState(null);
 
   const audioCtxRef = useRef(null);
   const musicRef    = useRef(null);
   const timerRef    = useRef(null);
+  const audioRef    = useRef(null);
 
   useEffect(() => {
     fetchMemories()
       .then(d => setGroups(groupByYear(d.photos)))
       .catch(e => setError(e.message));
+    fetch('/api/music/scan-status')
+      .then(r => r.json()).then(setScanInfo).catch(() => {});
   }, []);
+
+  // Re-fetch track list whenever mood changes
+  useEffect(() => {
+    fetch(`/api/music?mood=${musicStyle}`)
+      .then(r => r.json())
+      .then(d => { setTracks(d.tracks ?? []); setTrackIdx(0); })
+      .catch(() => setTracks([]));
+  }, [musicStyle]);
 
   useEffect(() => () => { stopMusic(); clearInterval(timerRef.current); }, []);
 
@@ -230,10 +244,13 @@ export default function MemoriesView() {
   }
 
   function toggleMute() {
-    if (!musicRef.current || !audioCtxRef.current) return;
     const next = !muted;
     setMuted(next);
-    musicRef.current.master.gain.linearRampToValueAtTime(next ? 0 : 0.42, audioCtxRef.current.currentTime + 0.5);
+    if (tracks.length > 0) {
+      if (audioRef.current) audioRef.current.volume = next ? 0 : 1;
+    } else if (musicRef.current && audioCtxRef.current) {
+      musicRef.current.master.gain.linearRampToValueAtTime(next ? 0 : 0.42, audioCtxRef.current.currentTime + 0.5);
+    }
   }
 
   // ── Slideshow ──
@@ -248,7 +265,8 @@ export default function MemoriesView() {
 
   function startSlideshow(idx) {
     setSsIndex(idx); setOpacity(1); setSlideshow(true);
-    startMusic(musicStyle);
+    setTrackIdx(0);
+    if (tracks.length === 0) startMusic(musicStyle); // synth fallback
   }
 
   function stopSlideshow() {
@@ -256,6 +274,7 @@ export default function MemoriesView() {
     setSlideshow(false);
     stopMusic();
     setMuted(false);
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
   }
 
   useEffect(() => {
@@ -304,25 +323,46 @@ export default function MemoriesView() {
           {!noPhotos && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Music style picker */}
-              <div style={{ display: 'flex', gap: 4, background: '#111', borderRadius: 8, padding: 3 }}>
-                {MUSIC_STYLES.map(s => (
-                  <button
-                    key={s.key}
-                    onClick={() => setMusicStyle(s.key)}
-                    title={s.label}
-                    style={{
-                      background: musicStyle === s.key ? '#1e2a3a' : 'transparent',
-                      border: 'none', borderRadius: 6,
-                      color: musicStyle === s.key ? '#7ab8f5' : '#555',
-                      cursor: 'pointer', padding: '5px 10px',
-                      fontSize: 13, display: 'flex', alignItems: 'center', gap: 5,
-                      transition: 'background 0.15s, color 0.15s',
-                    }}
-                  >
-                    <span>{s.icon}</span>
-                    <span style={{ fontSize: 12 }}>{s.label}</span>
-                  </button>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 4, background: '#111', borderRadius: 8, padding: 3 }}>
+                  {MUSIC_STYLES.map(s => (
+                    <button
+                      key={s.key}
+                      onClick={() => setMusicStyle(s.key)}
+                      title={s.label}
+                      style={{
+                        background: musicStyle === s.key ? '#1e2a3a' : 'transparent',
+                        border: 'none', borderRadius: 6,
+                        color: musicStyle === s.key ? '#7ab8f5' : '#555',
+                        cursor: 'pointer', padding: '5px 10px',
+                        fontSize: 13, display: 'flex', alignItems: 'center', gap: 5,
+                        transition: 'background 0.15s, color 0.15s',
+                      }}
+                    >
+                      <span>{s.icon}</span>
+                      <span style={{ fontSize: 12 }}>{s.label}</span>
+                    </button>
+                  ))}
+                </div>
+                {scanInfo && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, color: '#444' }}>
+                      {scanInfo.scanning ? '⟳ Scanning music…' : scanInfo.enabled ? `${(scanInfo.total ?? tracks.length || scanInfo.count).toLocaleString()} tracks` : ''}
+                    </span>
+                    {scanInfo.enabled && !scanInfo.scanning && (
+                      <button
+                        onClick={() => {
+                          fetch('/api/music/scan', { method: 'POST' }).then(() =>
+                            setScanInfo(s => ({ ...s, scanning: true }))
+                          );
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 11, padding: 0 }}
+                      >
+                        Rescan
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Play button */}
@@ -414,6 +454,19 @@ export default function MemoriesView() {
               <button onClick={() => advance(1)}  style={navBtn('right')} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}>›</button>
             </div>
 
+            {/* Hidden audio element for real music */}
+            {tracks.length > 0 && (
+              <audio
+                ref={audioRef}
+                key={tracks[trackIdx % tracks.length]?.id}
+                src={`/api/music/stream/${tracks[trackIdx % tracks.length]?.id}`}
+                autoPlay
+                onEnded={() => setTrackIdx(i => (i + 1) % tracks.length)}
+                onError={() => setTrackIdx(i => (i + 1) % tracks.length)}
+                style={{ display: 'none' }}
+              />
+            )}
+
             {/* Bottom bar */}
             <div style={{ background: '#090909', borderTop: '1px solid #1a1a1a', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* Dots */}
@@ -426,6 +479,15 @@ export default function MemoriesView() {
                   />
                 ))}
               </div>
+
+              {/* Now playing */}
+              {tracks.length > 0 && tracks[trackIdx % tracks.length] && (
+                <div style={{ fontSize: 11, color: '#555', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {tracks[trackIdx % tracks.length].title}
+                  {tracks[trackIdx % tracks.length].artist
+                    ? ` — ${tracks[trackIdx % tracks.length].artist}` : ''}
+                </div>
+              )}
 
               <span style={{ fontSize: 12, color: '#555', flexShrink: 0 }}>
                 {style?.icon} {ssIndex + 1} / {allPhotos.length}
