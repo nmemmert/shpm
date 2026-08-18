@@ -5,6 +5,7 @@ import Lightbox from './components/Lightbox.jsx';
 import FilterSidebar from './components/FilterSidebar.jsx';
 import IngestBadge from './components/IngestBadge.jsx';
 import DuplicatesView from './components/DuplicatesView.jsx';
+import SettingsPanel from './components/SettingsPanel.jsx';
 
 import { lazy, Suspense } from 'react';
 const MapView = lazy(() => import('./components/MapView.jsx'));
@@ -24,8 +25,9 @@ export default function App() {
   const [filters, setFilters]   = useState(EMPTY_FILTERS);
   const [stats, setStats]       = useState(null);
 
-  const [lbPhotos, setLbPhotos] = useState(null);
-  const [lbIndex, setLbIndex]   = useState(null);
+  const [lbPhotos, setLbPhotos]       = useState(null);
+  const [lbIndex, setLbIndex]         = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const loadingRef  = useRef(false);
   const sentinelRef = useRef(null);
@@ -138,9 +140,23 @@ export default function App() {
           </Tab>
         </nav>
 
-        {/* Ingest progress — right side */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+        {/* Right side: ingest badge + gear */}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
           <IngestBadge onScanComplete={handleScanComplete} />
+          <button
+            onClick={() => setShowSettings(s => !s)}
+            title="Settings"
+            style={{
+              background: showSettings ? '#1e2a3a' : 'transparent',
+              border: 'none', borderRadius: 6,
+              color: showSettings ? '#7ab8f5' : '#555',
+              cursor: 'pointer', fontSize: 16,
+              width: 32, height: 32,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            ⚙
+          </button>
         </div>
       </header>
 
@@ -216,6 +232,9 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* Settings panel */}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
       {/* Lightbox */}
       {lbPhotos !== null && (

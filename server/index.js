@@ -246,8 +246,10 @@ app.delete('/api/photos/:id/collections/:colId', (req, res) => {
 // ── Duplicates ────────────────────────────────────────────────────────────────
 
 app.post('/api/dedupe/scan', (_req, res) => {
-  try { res.json(scan(db)); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const { dedupe_threshold } = db.getSettings();
+    res.json(scan(db, dedupe_threshold));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/duplicates', (_req, res) => {
@@ -271,6 +273,48 @@ app.post('/api/duplicates/dismiss', (req, res) => {
   const ids = req.body.photoIds;
   if (!Array.isArray(ids) || ids.length < 2) return badRequest(res, 'photoIds must be array of ≥2');
   db.dismissDuplicates(ids.map(Number));
+  res.sendStatus(204);
+});
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+app.get('/api/settings', (_req, res) => res.json(db.getSettings()));
+
+app.patch('/api/settings', (req, res) => {
+  const allowed = new Set(['thumb_size', 'thumb_quality', 'preview_size', 'preview_quality', 'dedupe_threshold']);
+  for (const [key, value] of Object.entries(req.body)) {
+    if (!allowed.has(key)) continue;
+    const n = parseInt(value, 10);
+    if (!isNaN(n)) db.setSetting(key, n);
+  }
+  res.json(db.getSettings());
+});
+
+// ── Watch folders ─────────────────────────────────────────────────────────────
+
+app.get('/api/watch-folders', (_req, res) => res.json(db.listWatchFolders()));
+
+app.post('/api/watch-folders', (req, res) => {
+  const p = (req.body.path ?? '').trim();
+  if (!p) return badRequest(res, 'path required');
+  db.addWatchFolder(p);
+  res.status(201).json(db.listWatchFolders());
+});
+
+app.delete('/api/watch-folders/:id', (req, res) => {
+  db.removeWatchFolder(parseInt(req.params.id, 10));
+  res.sendStatus(204);
+});
+
+app.patch('/api/watch-folders/:id', (req, res) => {
+  db.toggleWatchFolder(parseInt(req.params.id, 10), req.body.enabled);
+  res.json(db.listWatchFolders());
+});
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+app.post('/api/admin/clear-dismissals', (_req, res) => {
+  db.raw.prepare('UPDATE duplicate_pairs SET dismissed = 0').run();
   res.sendStatus(204);
 });
 

@@ -1,23 +1,28 @@
 import 'dotenv/config';
 import chokidar from 'chokidar';
 import path from 'path';
+import fs from 'fs';
 import { openDb } from './db.js';
 import { ingestFile, isSupported } from './ingest.js';
 
-const PHOTO_DIR  = process.env.PHOTO_DIR  ?? './photos';
+const PHOTO_DIR  = process.env.PHOTO_DIR  ?? null;
 const DB_PATH    = process.env.DB_PATH    ?? './data/library.db';
 const POSTER_DIR = process.env.POSTER_DIR ?? './data/posters';
 
 const db = openDb(DB_PATH);
 
-// Load all known paths into memory once so chokidar's initial 'add' burst
-// for an already-indexed library costs one bulk query instead of N serial
-// DB lookups through the drain queue.
+// Seed PHOTO_DIR env var as the first watch folder (if set)
+if (PHOTO_DIR) {
+  const resolved = path.resolve(PHOTO_DIR);
+  if (fs.existsSync(resolved)) db.addWatchFolder(resolved);
+}
+
+// Load all known filepaths into memory so the initial chokidar burst skips
+// already-indexed files without touching the drain queue.
 const indexed = new Set(
   db.raw.prepare('SELECT filepath FROM photos').all().map(r => r.filepath)
 );
 
-console.log(`[worker] watching ${path.resolve(PHOTO_DIR)}`);
 console.log(`[worker] db at ${path.resolve(DB_PATH)} (${indexed.size} photos indexed)`);
 
 const queue = [];
@@ -28,13 +33,13 @@ let errors  = 0;
 async function drain() {
   if (busy) return;
   busy = true;
-
   db.setIngestStatus({ active: true, scanned, errors });
 
   while (queue.length > 0) {
-    const fp = queue.shift();
+    const fp       = queue.shift();
+    const settings = db.getSettings();
     try {
-      await ingestFile(fp, db, POSTER_DIR);
+      await ingestFile(fp, db, POSTER_DIR, settings);
       indexed.add(fp);
       scanned++;
       db.setIngestStatus({ active: true, current: path.basename(fp), scanned, errors });
@@ -49,7 +54,8 @@ async function drain() {
   busy = false;
 }
 
-const watcher = chokidar.watch(PHOTO_DIR, {
+// Single chokidar instance — paths are added/removed dynamically
+const watcher = chokidar.watch([], {
   persistent: true,
   ignoreInitial: false,
   awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 100 },
@@ -59,7 +65,7 @@ const watcher = chokidar.watch(PHOTO_DIR, {
 watcher.on('add', (fp) => {
   if (!isSupported(fp)) return;
   const resolved = path.resolve(fp);
-  if (indexed.has(resolved)) return;   // already in DB — skip entirely
+  if (indexed.has(resolved)) return;
   queue.push(resolved);
   drain();
 });
@@ -72,6 +78,34 @@ watcher.on('unlink', (fp) => {
 });
 
 watcher.on('error', (err) => console.error('[worker] watcher error:', err));
+
+// Sync watched paths against watch_folders table
+const watching = new Set();
+
+function syncWatchFolders() {
+  const folders = db.listWatchFolders().filter(f => f.enabled);
+
+  for (const { path: p } of folders) {
+    if (!watching.has(p)) {
+      console.log(`[worker] watching ${p}`);
+      watcher.add(p);
+      watching.add(p);
+    }
+  }
+
+  const enabledPaths = new Set(folders.map(f => f.path));
+  for (const p of watching) {
+    if (!enabledPaths.has(p)) {
+      console.log(`[worker] stopped watching ${p}`);
+      watcher.unwatch(p);
+      watching.delete(p);
+    }
+  }
+}
+
+// Initial sync then poll every 30s for UI-added folders
+syncWatchFolders();
+setInterval(syncWatchFolders, 30_000);
 
 process.on('SIGINT', () => {
   console.log('\n[worker] shutting down');

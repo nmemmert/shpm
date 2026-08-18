@@ -68,6 +68,37 @@ export function removeFromCollection(photoId, collectionId) {
   return api(`/api/photos/${photoId}/collections/${collectionId}`, { method: 'DELETE' });
 }
 
+// Settings
+export function fetchSettings() {
+  return api('/api/settings');
+}
+
+export function patchSettings(updates) {
+  return api('/api/settings', { method: 'PATCH', ...json(updates) });
+}
+
+// Watch folders
+export function fetchWatchFolders() {
+  return api('/api/watch-folders');
+}
+
+export function addWatchFolder(path) {
+  return api('/api/watch-folders', { method: 'POST', ...json({ path }) });
+}
+
+export function removeWatchFolder(id) {
+  return api(`/api/watch-folders/${id}`, { method: 'DELETE' });
+}
+
+export function toggleWatchFolder(id, enabled) {
+  return api(`/api/watch-folders/${id}`, { method: 'PATCH', ...json({ enabled }) });
+}
+
+// Admin
+export function clearDismissals() {
+  return api('/api/admin/clear-dismissals', { method: 'POST' });
+}
+
 // Duplicates
 export function fetchDuplicates() {
   return api('/api/duplicates');

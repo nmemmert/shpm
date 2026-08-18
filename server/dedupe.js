@@ -1,9 +1,7 @@
 import { hammingDistance } from '../worker/hash.js';
 
-const THRESHOLD = parseInt(process.env.DEDUPE_THRESHOLD ?? '10', 10);
-
-// Run pairwise pHash comparison and store new similar pairs.
-export function scan(db) {
+export function scan(db, threshold) {
+  const THRESHOLD = threshold ?? parseInt(process.env.DEDUPE_THRESHOLD ?? '10', 10);
   const start = Date.now();
 
   const photos = db.raw.prepare(
@@ -30,13 +28,10 @@ export function scan(db) {
   return { photos: photos.length, newPairs, duration: Date.now() - start };
 }
 
-// Build connected-component groups from non-dismissed pairs.
-// Returns an array of photo-row arrays, largest groups first.
 export function getGroups(db) {
   const pairs = db.getDupePairs();
   if (!pairs.length) return [];
 
-  // Union-Find with path compression
   const parent = new Map();
 
   function find(x) {
@@ -45,18 +40,11 @@ export function getGroups(db) {
     return parent.get(x);
   }
 
-  function union(a, b) {
-    parent.set(find(a), find(b));
-  }
+  function union(a, b) { parent.set(find(a), find(b)); }
 
-  for (const { photo_id_a, photo_id_b } of pairs) {
-    union(photo_id_a, photo_id_b);
-  }
-
-  // Normalize roots (path compression may have left stale entries)
+  for (const { photo_id_a, photo_id_b } of pairs) union(photo_id_a, photo_id_b);
   for (const id of [...parent.keys()]) find(id);
 
-  // Group IDs by root
   const groups = new Map();
   for (const id of parent.keys()) {
     const root = find(id);
@@ -64,7 +52,6 @@ export function getGroups(db) {
     groups.get(root).push(id);
   }
 
-  // Fetch photo details for all IDs
   const allIds = [...parent.keys()];
   const rows   = db.raw.prepare(
     `SELECT id, thumb_path, preview_path, date_taken, filesize, width, height, camera_model

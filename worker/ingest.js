@@ -14,8 +14,13 @@ export function isSupported(filepath) {
   return SUPPORTED.has(path.extname(filepath).toLowerCase());
 }
 
-export async function ingestFile(filepath, db, posterDir) {
+export async function ingestFile(filepath, db, posterDir, settings = {}) {
   if (db.hasPhoto(filepath)) return;
+
+  const thumbSize      = settings.thumb_size      ?? 400;
+  const thumbQuality   = settings.thumb_quality   ?? 80;
+  const previewSize    = settings.preview_size    ?? 1600;
+  const previewQuality = settings.preview_quality ?? 85;
 
   const stat = fs.statSync(filepath);
 
@@ -27,10 +32,10 @@ export async function ingestFile(filepath, db, posterDir) {
     }) ?? {};
   } catch {}
 
-  const dateTaken    = exif.DateTimeOriginal ?? null;
-  const cameraModel  = [exif.Make, exif.Model].filter(Boolean).join(' ') || null;
-  const gpsLat       = exif.latitude  ?? null;
-  const gpsLon       = exif.longitude ?? null;
+  const dateTaken   = exif.DateTimeOriginal ?? null;
+  const cameraModel = [exif.Make, exif.Model].filter(Boolean).join(' ') || null;
+  const gpsLat      = exif.latitude  ?? null;
+  const gpsLon      = exif.longitude ?? null;
 
   const { dir, thumb, preview } = posterPaths(filepath, posterDir, dateTaken ?? stat.mtime);
   fs.mkdirSync(dir, { recursive: true });
@@ -44,14 +49,14 @@ export async function ingestFile(filepath, db, posterDir) {
 
     await sharp(filepath, { failOn: 'none' })
       .rotate()
-      .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 80 })
+      .resize(thumbSize, thumbSize, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: thumbQuality })
       .toFile(thumb);
 
     await sharp(filepath, { failOn: 'none' })
       .rotate()
-      .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 85 })
+      .resize(previewSize, previewSize, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: previewQuality })
       .toFile(preview);
   } catch (err) {
     console.error(`[ingest] poster failed ${path.basename(filepath)}: ${err.message}`);
@@ -63,17 +68,17 @@ export async function ingestFile(filepath, db, posterDir) {
 
   db.insertPhoto({
     filepath,
-    thumb_path:   thumb,
-    preview_path: preview,
-    date_taken:   dateTaken ? new Date(dateTaken).toISOString() : null,
+    thumb_path:    thumb,
+    preview_path:  preview,
+    date_taken:    dateTaken ? new Date(dateTaken).toISOString() : null,
     date_imported: new Date().toISOString(),
-    camera_model: cameraModel,
-    gps_lat:      gpsLat,
-    gps_lon:      gpsLon,
+    camera_model:  cameraModel,
+    gps_lat:       gpsLat,
+    gps_lon:       gpsLon,
     phash,
     width,
     height,
-    filesize:     stat.size,
+    filesize: stat.size,
   });
 
   console.log(`[ingest] ${path.basename(filepath)}`);

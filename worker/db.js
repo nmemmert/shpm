@@ -2,6 +2,14 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
+const SETTING_DEFAULTS = {
+  thumb_size:       '400',
+  thumb_quality:    '80',
+  preview_size:     '1600',
+  preview_quality:  '85',
+  dedupe_threshold: '10',
+};
+
 export function openDb(dbPath) {
   fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
 
@@ -73,10 +81,26 @@ export function openDb(dbPath) {
       started_at TEXT,
       updated_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS watch_folders (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      path     TEXT NOT NULL UNIQUE,
+      enabled  INTEGER NOT NULL DEFAULT 1,
+      added_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
-  // Migrations for columns added after initial schema
+  // Column migrations
   try { db.exec('ALTER TABLE photos ADD COLUMN starred INTEGER NOT NULL DEFAULT 0'); } catch {}
+
+  // Seed default settings
+  const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+  for (const [k, v] of Object.entries(SETTING_DEFAULTS)) seedSetting.run(k, v);
 
   const s = {
     insert:   db.prepare(`
@@ -98,29 +122,21 @@ export function openDb(dbPath) {
       FROM tags t LEFT JOIN photo_tags pt ON pt.tag_id = t.id
       GROUP BY t.id ORDER BY t.name
     `),
-    tagOfPhoto: db.prepare(
-      'SELECT t.id, t.name FROM tags t JOIN photo_tags pt ON pt.tag_id = t.id WHERE pt.photo_id = ? ORDER BY t.name'
-    ),
+    tagOfPhoto: db.prepare('SELECT t.id, t.name FROM tags t JOIN photo_tags pt ON pt.tag_id = t.id WHERE pt.photo_id = ? ORDER BY t.name'),
     tagAttach:  db.prepare('INSERT OR IGNORE INTO photo_tags (photo_id, tag_id) VALUES (?, ?)'),
     tagDetach:  db.prepare('DELETE FROM photo_tags WHERE photo_id = ? AND tag_id = ?'),
 
     colList:    db.prepare(`
-      SELECT c.id, c.name, c.description, c.created_at,
-             COUNT(pc.photo_id) AS photo_count
-      FROM collections c
-      LEFT JOIN photo_collections pc ON pc.collection_id = c.id
+      SELECT c.id, c.name, c.description, c.created_at, COUNT(pc.photo_id) AS photo_count
+      FROM collections c LEFT JOIN photo_collections pc ON pc.collection_id = c.id
       GROUP BY c.id ORDER BY c.name
     `),
     colInsert:  db.prepare('INSERT INTO collections (name, description) VALUES (?, ?)'),
-    colOfPhoto: db.prepare(
-      'SELECT c.id, c.name FROM collections c JOIN photo_collections pc ON pc.collection_id = c.id WHERE pc.photo_id = ? ORDER BY c.name'
-    ),
+    colOfPhoto: db.prepare('SELECT c.id, c.name FROM collections c JOIN photo_collections pc ON pc.collection_id = c.id WHERE pc.photo_id = ? ORDER BY c.name'),
     colAdd:     db.prepare('INSERT OR IGNORE INTO photo_collections (photo_id, collection_id) VALUES (?, ?)'),
     colRemove:  db.prepare('DELETE FROM photo_collections WHERE photo_id = ? AND collection_id = ?'),
 
-    dupePairs: db.prepare(
-      'SELECT photo_id_a, photo_id_b, distance FROM duplicate_pairs WHERE dismissed = 0'
-    ),
+    dupePairs: db.prepare('SELECT photo_id_a, photo_id_b, distance FROM duplicate_pairs WHERE dismissed = 0'),
 
     ingestGet: db.prepare('SELECT * FROM ingest_status WHERE id = 1'),
     ingestSet: db.prepare(`
@@ -134,6 +150,14 @@ export function openDb(dbPath) {
         started_at = COALESCE(ingest_status.started_at, excluded.started_at),
         updated_at = excluded.updated_at
     `),
+
+    settingsAll: db.prepare('SELECT key, value FROM settings'),
+    settingsSet: db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'),
+
+    foldersAll:    db.prepare('SELECT id, path, enabled, added_at FROM watch_folders ORDER BY added_at'),
+    folderInsert:  db.prepare('INSERT OR IGNORE INTO watch_folders (path) VALUES (?)'),
+    folderDelete:  db.prepare('DELETE FROM watch_folders WHERE id = ?'),
+    folderToggle:  db.prepare('UPDATE watch_folders SET enabled = ? WHERE id = ?'),
   };
 
   const addTagTx = db.transaction((photoId, tagName) => {
@@ -156,14 +180,14 @@ export function openDb(dbPath) {
     getPhotoTags:       (photoId)          => s.tagOfPhoto.all(photoId),
     listAllTags:        ()                 => s.tagList.all(),
 
-    listCollections: () => s.colList.all(),
-    createCollection: (name, desc) => {
+    listCollections:           ()           => s.colList.all(),
+    createCollection:          (name, desc) => {
       const info = s.colInsert.run(name, desc ?? null);
       return { id: info.lastInsertRowid, name, description: desc ?? null };
     },
-    addPhotoToCollection:      (photoId, colId) => s.colAdd.run(photoId, colId),
-    removePhotoFromCollection: (photoId, colId) => s.colRemove.run(photoId, colId),
-    getPhotoCollections:       (photoId)        => s.colOfPhoto.all(photoId),
+    addPhotoToCollection:      (pid, cid)   => s.colAdd.run(pid, cid),
+    removePhotoFromCollection: (pid, cid)   => s.colRemove.run(pid, cid),
+    getPhotoCollections:       (pid)        => s.colOfPhoto.all(pid),
 
     getDupePairs: () => s.dupePairs.all(),
     dismissDuplicates: (ids) => {
@@ -176,15 +200,26 @@ export function openDb(dbPath) {
 
     getIngestStatus: () =>
       s.ingestGet.get() ?? { active: 0, current: null, scanned: 0, errors: 0 },
-
     setIngestStatus: ({ active, current = null, scanned = 0, errors = 0 }) =>
       s.ingestSet.run({
-        active: active ? 1 : 0,
-        current,
-        scanned,
-        errors,
+        active: active ? 1 : 0, current, scanned, errors,
         started_at: active ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       }),
+
+    getSettings: () => {
+      const rows = s.settingsAll.all();
+      const out = { ...SETTING_DEFAULTS };
+      for (const { key, value } of rows) out[key] = value;
+      // Parse numerics
+      for (const k of Object.keys(SETTING_DEFAULTS)) out[k] = parseInt(out[k], 10);
+      return out;
+    },
+    setSetting: (key, value) => s.settingsSet.run(key, String(value)),
+
+    listWatchFolders:   ()        => s.foldersAll.all(),
+    addWatchFolder:     (p)       => s.folderInsert.run(p),
+    removeWatchFolder:  (id)      => s.folderDelete.run(id),
+    toggleWatchFolder:  (id, en)  => s.folderToggle.run(en ? 1 : 0, id),
   };
 }
