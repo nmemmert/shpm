@@ -44,16 +44,18 @@ function fmtSize(b) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function VideosView() {
+export default function VideosView({ filters = {} }) {
   const [videos,  setVideos]  = useState(null);
   const [playing, setPlaying] = useState(null);
   const [error,   setError]   = useState(null);
 
   useEffect(() => {
-    fetchVideos()
+    setVideos(null);
+    setError(null);
+    fetchVideos({ from: filters.from, to: filters.to, city: filters.city })
       .then(d => setVideos(d.videos))
       .catch(e => setError(e.message));
-  }, []);
+  }, [filters.from, filters.to, filters.city]);
 
   useEffect(() => {
     if (!playing) return;

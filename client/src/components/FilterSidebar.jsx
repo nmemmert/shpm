@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 const MAX_DEFAULT = 5;
 
-export default function FilterSidebar({ filters, onChange, stats, total }) {
+export default function FilterSidebar({ filters, onChange, stats, total, allLabel = 'All Photos' }) {
   const [expanded, setExpanded] = useState({});
 
   function toggle(section) {
@@ -55,7 +55,7 @@ export default function FilterSidebar({ filters, onChange, stats, total }) {
         active={isAll && !filters.q}
         onClick={selectAll}
         icon="⊞"
-        label="All Photos"
+        label={allLabel}
         count={stats?.total ?? total}
       />
 

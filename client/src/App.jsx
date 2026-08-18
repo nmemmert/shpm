@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchPhotos, fetchLibraryStats } from './api/photos.js';
+import { fetchPhotos, fetchLibraryStats, fetchVideoStats } from './api/photos.js';
 import Timeline from './components/Timeline.jsx';
 import Lightbox from './components/Lightbox.jsx';
 import FilterSidebar from './components/FilterSidebar.jsx';
@@ -12,7 +12,8 @@ const MapView      = lazy(() => import('./components/MapView.jsx'));
 const MemoriesView = lazy(() => import('./components/MemoriesView.jsx'));
 const VideosView   = lazy(() => import('./components/VideosView.jsx'));
 
-const EMPTY_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
+const EMPTY_FILTERS       = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
+const EMPTY_VIDEO_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
 const SIDEBAR_W = 210;
 
 export default function App() {
@@ -24,8 +25,10 @@ export default function App() {
   const [error, setError]           = useState(null);
   const [dupeCount, setDupeCount]   = useState(0);
 
-  const [filters, setFilters]   = useState(EMPTY_FILTERS);
-  const [stats, setStats]       = useState(null);
+  const [filters, setFilters]         = useState(EMPTY_FILTERS);
+  const [stats, setStats]             = useState(null);
+  const [videoFilters, setVideoFilters] = useState(EMPTY_VIDEO_FILTERS);
+  const [videoStats, setVideoStats]   = useState(null);
 
   const [lbPhotos, setLbPhotos]       = useState(null);
   const [lbIndex, setLbIndex]         = useState(null);
@@ -39,6 +42,12 @@ export default function App() {
   }, []);
 
   useEffect(() => { loadStats(); }, []);
+
+  useEffect(() => {
+    if (view === 'videos') {
+      fetchVideoStats().then(setVideoStats).catch(() => {});
+    }
+  }, [view]);
 
   // Reset + reload when filters change (debounce text search)
   useEffect(() => {
@@ -167,20 +176,31 @@ export default function App() {
       {/* ── Body (sidebar + content) ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
 
-        {/* Sidebar — only in library view */}
-        {view === 'library' && (
+        {/* Sidebar — library and videos views */}
+        {(view === 'library' || view === 'videos') && (
           <aside style={{
             position: 'sticky', top: 52,
             width: SIDEBAR_W, flexShrink: 0,
             height: 'calc(100vh - 52px)', overflowY: 'auto',
             borderRight: '1px solid #141414', background: '#0a0a0a',
           }}>
-            <FilterSidebar
-              filters={filters}
-              onChange={setFilters}
-              stats={stats}
-              total={total}
-            />
+            {view === 'library' && (
+              <FilterSidebar
+                filters={filters}
+                onChange={setFilters}
+                stats={stats}
+                total={total}
+              />
+            )}
+            {view === 'videos' && (
+              <FilterSidebar
+                filters={videoFilters}
+                onChange={setVideoFilters}
+                stats={videoStats}
+                total={videoStats?.total}
+                allLabel="All Videos"
+              />
+            )}
           </aside>
         )}
 
@@ -221,7 +241,7 @@ export default function App() {
           {/* Videos */}
           {view === 'videos' && (
             <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
-              <VideosView />
+              <VideosView filters={videoFilters} />
             </Suspense>
           )}
 

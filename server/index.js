@@ -515,12 +515,28 @@ app.post('/api/admin/clear-dismissals', (_req, res) => {
 
 // ── Videos ────────────────────────────────────────────────────────────────────
 
-app.get('/api/videos', (_req, res) => {
-  const rows = db.raw.prepare(`
-    SELECT ${SELECT_COLS} FROM photos p
-    WHERE p.media_type = 'video'
-    ORDER BY p.date_taken DESC, p.id DESC
-  `).all();
+app.get('/api/videos/stats', (_req, res) => {
+  const total  = db.raw.prepare("SELECT COUNT(*) AS n FROM photos WHERE media_type = 'video'").get().n;
+  const years  = db.raw.prepare(
+    "SELECT strftime('%Y', date_taken) AS year, COUNT(*) AS count FROM photos WHERE media_type = 'video' AND date_taken IS NOT NULL GROUP BY year ORDER BY year DESC"
+  ).all();
+  const cities = db.raw.prepare(
+    "SELECT place_city AS city, place_country AS country, COUNT(*) AS count FROM photos WHERE media_type = 'video' AND place_city IS NOT NULL GROUP BY place_city ORDER BY count DESC LIMIT 100"
+  ).all();
+  res.json({ total, years, cities, starred: 0, tags: [], collections: [] });
+});
+
+app.get('/api/videos', (req, res) => {
+  const { from, to, city } = req.query;
+  const conditions = ["p.media_type = 'video'"];
+  const params = [];
+  if (from) { conditions.push('p.date_taken >= ?'); params.push(from); }
+  if (to)   { conditions.push('p.date_taken <= ?'); params.push(to); }
+  if (city) { conditions.push('p.place_city = ?');  params.push(city); }
+  const where = 'WHERE ' + conditions.join(' AND ');
+  const rows = db.raw.prepare(
+    `SELECT ${SELECT_COLS} FROM photos p ${where} ORDER BY p.date_taken DESC, p.id DESC`
+  ).all(...params);
   res.json({ videos: rows.map(mapPhoto), total: rows.length });
 });
 

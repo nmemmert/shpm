@@ -110,8 +110,17 @@ export function triggerSync(source) {
 }
 
 // Videos
-export function fetchVideos() {
-  return api('/api/videos');
+export function fetchVideoStats() {
+  return api('/api/videos/stats');
+}
+
+export function fetchVideos({ from, to, city } = {}) {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to)   p.set('to',   to);
+  if (city) p.set('city', city);
+  const qs = p.toString();
+  return api(`/api/videos${qs ? '?' + qs : ''}`);
 }
 
 // Memories
