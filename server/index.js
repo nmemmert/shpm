@@ -31,6 +31,19 @@ function pushSyncUpdate() {
   for (const res of syncClients) res.write(`data: ${payload}\n\n`);
 }
 
+function spawnAsync(command, args, onLine) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, { stdio: 'pipe' });
+    const onData = (chunk) => {
+      chunk.toString().split('\n').filter(Boolean).forEach(onLine);
+    };
+    proc.stdout.on('data', onData);
+    proc.stderr.on('data', onData);
+    proc.on('close', resolve);
+    proc.on('error', reject);
+  });
+}
+
 function runSync(source, command, args) {
   const job = syncJobs[source];
   if (job.running) return false;
@@ -41,32 +54,79 @@ function runSync(source, command, args) {
   job.error    = null;
   pushSyncUpdate();
 
-  const proc = spawn(command, args, { stdio: 'pipe' });
-
-  const onData = (chunk) => {
-    const newLines = chunk.toString().split('\n').filter(Boolean);
-    job.lines.push(...newLines);
+  const addLine = (line) => {
+    job.lines.push(line);
     if (job.lines.length > 500) job.lines = job.lines.slice(-500);
     pushSyncUpdate();
   };
-  proc.stdout.on('data', onData);
-  proc.stderr.on('data', onData);
 
-  proc.on('close', (code) => {
-    job.running  = false;
-    job.exitCode = code;
-    if (code !== 0) job.error = `Exited with code ${code}`;
-    pushSyncUpdate();
-  });
-
-  proc.on('error', (err) => {
-    job.running = false;
-    job.error   = err.message;
-    job.lines.push(`Error: ${err.message}`);
-    pushSyncUpdate();
-  });
+  spawnAsync(command, args, addLine)
+    .then(code => {
+      job.running  = false;
+      job.exitCode = code;
+      if (code !== 0) job.error = `Exited with code ${code}`;
+      pushSyncUpdate();
+    })
+    .catch(err => {
+      job.running = false;
+      job.error   = err.message;
+      addLine(`Error: ${err.message}`);
+      pushSyncUpdate();
+    });
 
   return true;
+}
+
+async function runICloudSync(s) {
+  const job = syncJobs.icloud;
+
+  const addLine = (line) => {
+    job.lines.push(line);
+    if (job.lines.length > 500) job.lines = job.lines.slice(-500);
+    pushSyncUpdate();
+  };
+
+  const baseArgs = ['--cookie-directory', s.icloud_cookie_dir, '--username', s.icloud_apple_id];
+  if (s.icloud_password) baseArgs.push('--password', s.icloud_password);
+
+  // Discover libraries
+  addLine('Discovering libraries…');
+  const discoveryLines = [];
+  await spawnAsync('icloudpd', [...baseArgs, '--list-libraries'], (line) => {
+    addLine(line);
+    discoveryLines.push(line);
+  });
+
+  const libraries = discoveryLines
+    .map(l => l.trim())
+    .filter(l => /^[A-Za-z][A-Za-z0-9-]*$/.test(l));
+
+  if (libraries.length === 0) {
+    job.running  = false;
+    job.exitCode = 1;
+    job.error    = 'No libraries found';
+    pushSyncUpdate();
+    return;
+  }
+
+  addLine(`Found ${libraries.length} librar${libraries.length === 1 ? 'y' : 'ies'}: ${libraries.join(', ')}`);
+
+  let exitCode = 0;
+  for (const lib of libraries) {
+    const dest = path.join(s.icloud_dest, lib);
+    addLine(`\n── Syncing ${lib} → ${dest}`);
+    const code = await spawnAsync('icloudpd', [
+      ...baseArgs,
+      '--directory', dest,
+      '--library', lib,
+    ], addLine);
+    if (code !== 0) exitCode = code;
+  }
+
+  job.running  = false;
+  job.exitCode = exitCode;
+  if (exitCode !== 0) job.error = `Exited with code ${exitCode}`;
+  pushSyncUpdate();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -356,16 +416,23 @@ app.post('/api/sync/icloud', (_req, res) => {
   const s = db.getSettings();
   if (!s.icloud_apple_id) return badRequest(res, 'Apple ID not configured');
 
-  const args = [
-    '--username',         s.icloud_apple_id,
-    '--directory',        s.icloud_dest,
-    '--cookie-directory', s.icloud_cookie_dir,
-  ];
-  if (s.icloud_password) args.push('--password', s.icloud_password);
+  const job = syncJobs.icloud;
+  if (job.running) return res.status(409).json({ error: 'Sync already running' });
 
-  if (!runSync('icloud', 'icloudpd', args)) {
-    return res.status(409).json({ error: 'Sync already running' });
-  }
+  job.running   = true;
+  job.lines     = [];
+  job.exitCode  = null;
+  job.startedAt = new Date().toISOString();
+  job.error     = null;
+  pushSyncUpdate();
+
+  runICloudSync(s).catch(err => {
+    job.running = false;
+    job.error   = err.message;
+    job.lines.push(`Error: ${err.message}`);
+    pushSyncUpdate();
+  });
+
   res.json({ ok: true });
 });
 
