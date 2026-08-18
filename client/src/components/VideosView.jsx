@@ -80,8 +80,9 @@ export default function VideosView({ filters = {} }) {
     );
   }
 
-  const shortCount  = videos.filter(v => v.duration != null && v.duration <= SHORT_THRESHOLD).length;
-  const visible     = showShort ? videos : videos.filter(v => v.duration == null || v.duration > SHORT_THRESHOLD);
+  const isShort     = v => v.duration != null && Math.floor(v.duration) <= SHORT_THRESHOLD;
+  const shortCount  = videos.filter(isShort).length;
+  const visible     = showShort ? videos : videos.filter(v => !isShort(v));
   const groups      = groupByMonth(visible).filter(g => g.videos.length > 0);
 
   return (
