@@ -126,6 +126,19 @@ export function openDb(dbPath) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_place_city  ON photos(place_city)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_media_type  ON photos(media_type)');
 
+  // Performance indexes for 30k+ libraries
+  // Composite covering index for the main library query (deleted + date_taken for sorted pagination)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_deleted_date ON photos(deleted, date_taken DESC, id DESC)');
+  // Composite for stats queries
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_deleted_starred ON photos(deleted, starred)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_deleted_type    ON photos(deleted, media_type)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_deleted_city    ON photos(deleted, place_city)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_deleted_camera  ON photos(deleted, camera_model)');
+  // Expression index for Memories ("on this day") — makes strftime('%m-%d') queries instant
+  db.exec("CREATE INDEX IF NOT EXISTS idx_photos_month_day ON photos(strftime('%m-%d', date_taken)) WHERE date_taken IS NOT NULL");
+  // Collections join performance
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photo_collections_col ON photo_collections(collection_id, photo_id)');
+
   // Seed default settings
   const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(SETTING_DEFAULTS)) seedSetting.run(k, v);

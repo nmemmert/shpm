@@ -347,7 +347,7 @@ export default function MemoriesView() {
                 {scanInfo && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: '#444' }}>
-                      {scanInfo.scanning ? '⟳ Scanning music…' : scanInfo.enabled ? `${(scanInfo.total ?? tracks.length || scanInfo.count).toLocaleString()} tracks` : ''}
+                      {scanInfo.scanning ? '⟳ Scanning music…' : scanInfo.enabled ? `${scanInfo.count.toLocaleString()} tracks` : ''}
                     </span>
                     {scanInfo.enabled && !scanInfo.scanning && (
                       <button

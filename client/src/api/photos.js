@@ -115,11 +115,12 @@ export function fetchVideoStats() {
   return api('/api/videos/stats');
 }
 
-export function fetchVideos({ from, to, city } = {}) {
+export function fetchVideos({ from, to, city, cursor } = {}) {
   const p = new URLSearchParams();
-  if (from) p.set('from', from);
-  if (to)   p.set('to',   to);
-  if (city) p.set('city', city);
+  if (from)   p.set('from',   from);
+  if (to)     p.set('to',     to);
+  if (city)   p.set('city',   city);
+  if (cursor) p.set('cursor', cursor);
   const qs = p.toString();
   return api(`/api/videos${qs ? '?' + qs : ''}`);
 }

@@ -26,6 +26,19 @@ if (MUSIC_DIR) {
 
 app.use(express.json());
 
+// ── In-memory cache (invalidated on any write) ────────────────────────────────
+const cache = {
+  _store: {},
+  get(key, ttlMs) {
+    const e = this._store[key];
+    if (!e || Date.now() - e.ts > ttlMs) return null;
+    return e.data;
+  },
+  set(key, data) { this._store[key] = { data, ts: Date.now() }; },
+  del(key) { delete this._store[key]; },
+  invalidate() { this._store = {}; },
+};
+
 // ── Photo Sync state ──────────────────────────────────────────────────────────
 
 const syncJobs = {
@@ -241,6 +254,10 @@ app.get('/api/ingest/stream', (req, res) => {
 // ── Library stats ─────────────────────────────────────────────────────────────
 
 app.get('/api/library/stats', (_req, res) => {
+  const cached = cache.get('library-stats', 30_000);
+  if (cached) return res.json(cached);
+
+  const total   = db.raw.prepare('SELECT COUNT(*) AS n FROM photos WHERE deleted = 0').get().n;
   const starred = db.raw.prepare('SELECT COUNT(*) AS n FROM photos WHERE starred = 1 AND deleted = 0').get().n;
   const years   = db.raw.prepare(
     "SELECT strftime('%Y', date_taken) AS year, COUNT(*) AS count FROM photos WHERE date_taken IS NOT NULL AND deleted = 0 GROUP BY year ORDER BY year DESC"
@@ -248,14 +265,9 @@ app.get('/api/library/stats', (_req, res) => {
   const cities  = db.raw.prepare(
     "SELECT place_city AS city, place_country AS country, COUNT(*) AS count FROM photos WHERE place_city IS NOT NULL AND deleted = 0 GROUP BY place_city ORDER BY count DESC LIMIT 100"
   ).all();
-  res.json({
-    total: db.raw.prepare('SELECT COUNT(*) AS n FROM photos WHERE deleted = 0').get().n,
-    starred,
-    years,
-    cities,
-    tags:        db.listAllTags(),
-    collections: db.listCollections(),
-  });
+  const data = { total, starred, years, cities, tags: db.listAllTags(), collections: db.listCollections() };
+  cache.set('library-stats', data);
+  res.json(data);
 });
 
 // ── Photos ────────────────────────────────────────────────────────────────────
@@ -348,16 +360,19 @@ app.get('/api/photos/:id', (req, res) => {
 
 app.delete('/api/photos/:id', (req, res) => {
   db.raw.prepare('UPDATE photos SET deleted = 1 WHERE id = ?').run(parseInt(req.params.id, 10));
+  cache.invalidate();
   res.sendStatus(204);
 });
 
 app.post('/api/photos/:id/restore', (req, res) => {
   db.raw.prepare('UPDATE photos SET deleted = 0 WHERE id = ?').run(parseInt(req.params.id, 10));
+  cache.invalidate();
   res.sendStatus(204);
 });
 
 app.delete('/api/photos/:id/permanent', (req, res) => {
   db.raw.prepare('DELETE FROM photos WHERE id = ?').run(parseInt(req.params.id, 10));
+  cache.invalidate();
   res.sendStatus(204);
 });
 
@@ -374,6 +389,7 @@ app.patch('/api/photos/bulk', (req, res) => {
   if ('starred' in req.body) {
     const ph = ids.map(() => '?').join(',');
     db.raw.prepare(`UPDATE photos SET starred = ? WHERE id IN (${ph})`).run(req.body.starred ? 1 : 0, ...ids);
+    cache.del('library-stats');
   }
   res.sendStatus(204);
 });
@@ -412,7 +428,9 @@ app.post('/api/collections', (req, res) => {
   const name = (req.body.name ?? '').trim().slice(0, 200);
   if (!name) return badRequest(res, 'name required');
   try {
-    res.status(201).json(db.createCollection(name, req.body.description));
+    const col = db.createCollection(name, req.body.description);
+    cache.invalidate();
+    res.status(201).json(col);
   } catch (e) {
     if (e.message.includes('UNIQUE')) return badRequest(res, 'collection already exists');
     throw e;
@@ -424,6 +442,7 @@ app.patch('/api/collections/:id', (req, res) => {
   if (!name) return badRequest(res, 'name required');
   try {
     db.raw.prepare('UPDATE collections SET name = ? WHERE id = ?').run(name, parseInt(req.params.id, 10));
+    cache.invalidate();
     res.sendStatus(204);
   } catch (e) {
     if (e.message.includes('UNIQUE')) return badRequest(res, 'collection already exists');
@@ -433,70 +452,90 @@ app.patch('/api/collections/:id', (req, res) => {
 
 app.delete('/api/collections/:id', (req, res) => {
   db.raw.prepare('DELETE FROM collections WHERE id = ?').run(parseInt(req.params.id, 10));
+  cache.invalidate();
   res.sendStatus(204);
 });
 
 // ── Albums (manual + smart auto-albums) ───────────────────────────────────────
 
 app.get('/api/albums', (_req, res) => {
+  const cached = cache.get('albums', 60_000);
+  if (cached) return res.json(cached);
+
+  // Collections: count from indexed join; cover via point-lookup on MAX(id) per collection
   const manual = db.raw.prepare(`
+    WITH cover AS (
+      SELECT collection_id, MAX(photo_id) AS cover_id
+      FROM photo_collections GROUP BY collection_id
+    )
     SELECT c.id, c.name, c.description, c.created_at,
       COUNT(pc.photo_id) AS photo_count,
-      (SELECT p.thumb_path FROM photo_collections pc2 JOIN photos p ON p.id = pc2.photo_id
-       WHERE pc2.collection_id = c.id ORDER BY p.date_taken DESC, p.id DESC LIMIT 1) AS cover_path
-    FROM collections c LEFT JOIN photo_collections pc ON pc.collection_id = c.id
+      p.thumb_path AS cover_path
+    FROM collections c
+    LEFT JOIN photo_collections pc ON pc.collection_id = c.id
+    LEFT JOIN cover cv ON cv.collection_id = c.id
+    LEFT JOIN photos p ON p.id = cv.cover_id
     GROUP BY c.id ORDER BY c.name
   `).all();
 
   const PHOTO_ONLY = "deleted = 0 AND (media_type IS NULL OR media_type = 'photo')";
 
+  // Use GROUP BY + MAX(id) per bucket instead of window functions (much faster at scale)
   const years = db.raw.prepare(`
-    SELECT year, count, cover_path FROM (
-      SELECT strftime('%Y', date_taken) AS year,
-        COUNT(*) OVER (PARTITION BY strftime('%Y', date_taken)) AS count,
-        thumb_path AS cover_path,
-        ROW_NUMBER() OVER (PARTITION BY strftime('%Y', date_taken) ORDER BY date_taken DESC, id DESC) AS rn
+    WITH agg AS (
+      SELECT strftime('%Y', date_taken) AS year, COUNT(*) AS count, MAX(id) AS cover_id
       FROM photos WHERE date_taken IS NOT NULL AND ${PHOTO_ONLY}
-    ) WHERE rn = 1 ORDER BY year DESC
+      GROUP BY strftime('%Y', date_taken)
+    )
+    SELECT a.year, a.count, p.thumb_path AS cover_path
+    FROM agg a JOIN photos p ON p.id = a.cover_id
+    ORDER BY a.year DESC
   `).all();
 
   const cities = db.raw.prepare(`
-    SELECT city, country, count, cover_path FROM (
+    WITH agg AS (
       SELECT place_city AS city, place_country AS country,
-        COUNT(*) OVER (PARTITION BY place_city) AS count,
-        thumb_path AS cover_path,
-        ROW_NUMBER() OVER (PARTITION BY place_city ORDER BY date_taken DESC, id DESC) AS rn
+        COUNT(*) AS count, MAX(id) AS cover_id
       FROM photos WHERE place_city IS NOT NULL AND ${PHOTO_ONLY}
-    ) WHERE rn = 1 ORDER BY count DESC LIMIT 50
+      GROUP BY place_city
+    )
+    SELECT a.city, a.country, a.count, p.thumb_path AS cover_path
+    FROM agg a JOIN photos p ON p.id = a.cover_id
+    ORDER BY a.count DESC LIMIT 50
   `).all();
 
   const cameras = db.raw.prepare(`
-    SELECT camera, count, cover_path FROM (
-      SELECT camera_model AS camera,
-        COUNT(*) OVER (PARTITION BY camera_model) AS count,
-        thumb_path AS cover_path,
-        ROW_NUMBER() OVER (PARTITION BY camera_model ORDER BY date_taken DESC, id DESC) AS rn
+    WITH agg AS (
+      SELECT camera_model AS camera, COUNT(*) AS count, MAX(id) AS cover_id
       FROM photos WHERE camera_model IS NOT NULL AND ${PHOTO_ONLY}
-    ) WHERE rn = 1 ORDER BY count DESC
+      GROUP BY camera_model
+    )
+    SELECT a.camera, a.count, p.thumb_path AS cover_path
+    FROM agg a JOIN photos p ON p.id = a.cover_id
+    ORDER BY a.count DESC
   `).all();
 
   const recent = [7, 30].map(days => {
     const since = new Date(Date.now() - days * 864e5).toISOString();
-    const count = db.raw.prepare(`SELECT COUNT(*) AS n FROM photos WHERE date_imported >= ? AND ${PHOTO_ONLY}`).get(since).n;
-    if (!count) return null;
-    const cover = db.raw.prepare(`SELECT thumb_path FROM photos WHERE date_imported >= ? AND ${PHOTO_ONLY} ORDER BY date_imported DESC LIMIT 1`).get(since);
-    return { days, label: days === 7 ? 'Last 7 days' : 'Last 30 days', count, cover_url: posterUrl(cover?.thumb_path) };
+    const row = db.raw.prepare(
+      `SELECT COUNT(*) AS count, MAX(id) AS cover_id FROM photos WHERE date_imported >= ? AND ${PHOTO_ONLY}`
+    ).get(since);
+    if (!row.count) return null;
+    const cover = db.raw.prepare('SELECT thumb_path FROM photos WHERE id = ?').get(row.cover_id);
+    return { days, label: days === 7 ? 'Last 7 days' : 'Last 30 days', count: row.count, cover_url: posterUrl(cover?.thumb_path) };
   }).filter(Boolean);
 
-  res.json({
-    manual:  manual.map(c => ({ ...c, cover_url: posterUrl(c.cover_path), cover_path: undefined })),
+  const data = {
+    manual: manual.map(c => ({ ...c, cover_url: posterUrl(c.cover_path), cover_path: undefined })),
     auto: {
       recent,
       years:   years.map(r   => ({ year:   r.year,   count: r.count,   cover_url: posterUrl(r.cover_path) })),
       cities:  cities.map(r  => ({ city:   r.city,   country: r.country, count: r.count,  cover_url: posterUrl(r.cover_path) })),
       cameras: cameras.map(r => ({ camera: r.camera, count: r.count,   cover_url: posterUrl(r.cover_path) })),
     },
-  });
+  };
+  cache.set('albums', data);
+  res.json(data);
 });
 
 app.post('/api/photos/bulk/collections', (req, res) => {
@@ -671,17 +710,41 @@ app.get('/api/videos/stats', (_req, res) => {
 });
 
 app.get('/api/videos', (req, res) => {
-  const { from, to, city } = req.query;
+  const { from, to, city, cursor } = req.query;
+  const limit = 100;
   const conditions = ["p.media_type = 'video'", "p.deleted = 0"];
   const params = [];
   if (from) { conditions.push('p.date_taken >= ?'); params.push(from); }
   if (to)   { conditions.push('p.date_taken <= ?'); params.push(to); }
   if (city) { conditions.push('p.place_city = ?');  params.push(city); }
+
+  let cursorSql = '';
+  const cursorParams = [];
+  if (cursor) {
+    const pipeAt = cursor.lastIndexOf('|');
+    const cursorDate = cursor.slice(0, pipeAt);
+    const cursorId   = parseInt(cursor.slice(pipeAt + 1), 10);
+    cursorSql = cursorDate
+      ? `AND (p.date_taken < ? OR (p.date_taken = ? AND p.id < ?) OR p.date_taken IS NULL)`
+      : `AND (p.date_taken IS NULL AND p.id < ?)`;
+    cursorDate ? cursorParams.push(cursorDate, cursorDate, cursorId) : cursorParams.push(cursorId);
+  }
+
   const where = 'WHERE ' + conditions.join(' AND ');
   const rows = db.raw.prepare(
-    `SELECT ${SELECT_COLS} FROM photos p ${where} ORDER BY p.date_taken DESC, p.id DESC`
-  ).all(...params);
-  res.json({ videos: rows.map(mapPhoto), total: rows.length });
+    `SELECT ${SELECT_COLS} FROM photos p ${where} ${cursorSql} ORDER BY p.date_taken DESC, p.id DESC LIMIT ?`
+  ).all(...params, ...cursorParams, limit + 1);
+
+  const total = db.raw.prepare(
+    `SELECT COUNT(*) AS n FROM photos p ${where}`
+  ).get(...params).n;
+
+  const hasMore    = rows.length > limit;
+  const page       = rows.slice(0, limit);
+  const last       = page[page.length - 1];
+  const nextCursor = hasMore && last ? `${last.date_taken ?? ''}|${last.id}` : null;
+
+  res.json({ videos: page.map(mapPhoto), nextCursor, total });
 });
 
 app.get('/api/photos/:id/video', (req, res) => {

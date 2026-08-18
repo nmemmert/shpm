@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchVideos } from '../api/photos.js';
 
 // ── Grouping (mirrors Timeline.jsx) ───────────────────────────────────────────
@@ -47,18 +47,51 @@ function fmtSize(b) {
 const SHORT_THRESHOLD = 2; // seconds
 
 export default function VideosView({ filters = {} }) {
-  const [videos,     setVideos]     = useState(null);
-  const [playing,    setPlaying]    = useState(null);
-  const [error,      setError]      = useState(null);
-  const [showShort,  setShowShort]  = useState(false);
+  const [videos,      setVideos]      = useState([]);
+  const [nextCursor,  setNextCursor]  = useState(undefined);
+  const [total,       setTotal]       = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [playing,     setPlaying]     = useState(null);
+  const [error,       setError]       = useState(null);
+  const [showShort,   setShowShort]   = useState(false);
+  const loadingRef  = useRef(false);
+  const sentinelRef = useRef(null);
+
+  const loadPage = useCallback(async (cursor, activeFilters) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await fetchVideos({ ...activeFilters, cursor });
+      setVideos(prev => cursor ? [...prev, ...d.videos] : d.videos);
+      setNextCursor(d.nextCursor ?? null);
+      setTotal(d.total);
+    } catch (e) {
+      setError(e.message);
+    }
+    loadingRef.current = false;
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    setVideos(null);
-    setError(null);
-    fetchVideos({ from: filters.from, to: filters.to, city: filters.city })
-      .then(d => setVideos(d.videos))
-      .catch(e => setError(e.message));
+    setVideos([]);
+    setNextCursor(undefined);
+    setTotal(null);
+    loadPage(undefined, { from: filters.from, to: filters.to, city: filters.city });
   }, [filters.from, filters.to, filters.city]);
+
+  useEffect(() => {
+    if (!sentinelRef.current || !nextCursor) return;
+    const el  = sentinelRef.current;
+    const cur = nextCursor;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadPage(cur, { from: filters.from, to: filters.to, city: filters.city }); },
+      { rootMargin: '600px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [nextCursor, filters.from, filters.to, filters.city]);
 
   useEffect(() => {
     if (!playing) return;
@@ -67,10 +100,10 @@ export default function VideosView({ filters = {} }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [playing]);
 
-  if (error)   return <p style={{ color: '#f87171', padding: 24, fontSize: 14 }}>{error}</p>;
-  if (!videos) return <p style={{ color: '#777',    padding: 24, fontSize: 13 }}>Loading…</p>;
+  if (error) return <p style={{ color: '#f87171', padding: 24, fontSize: 14 }}>{error}</p>;
 
-  if (videos.length === 0) {
+  const isEmpty = !loading && videos.length === 0;
+  if (isEmpty) {
     return (
       <div style={{ textAlign: 'center', paddingTop: 60, color: '#555' }}>
         <div style={{ fontSize: 44, marginBottom: 18, opacity: 0.4 }}>🎬</div>
@@ -112,6 +145,9 @@ export default function VideosView({ filters = {} }) {
       )}
 
       <main style={{ padding: '0 3px' }}>
+        {loading && videos.length === 0 && (
+          <p style={{ padding: 24, color: '#555', fontSize: 13 }}>Loading…</p>
+        )}
         {groups.map(group => (
           <section key={group.key} style={{ marginBottom: 8 }}>
 
@@ -140,6 +176,15 @@ export default function VideosView({ filters = {} }) {
             </div>
           </section>
         ))}
+        <div ref={sentinelRef} style={{ height: 1 }} />
+        {loading && videos.length > 0 && (
+          <p style={{ textAlign: 'center', padding: 24, color: '#444', fontSize: 13 }}>Loading…</p>
+        )}
+        {nextCursor === null && videos.length > 0 && !loading && (
+          <p style={{ textAlign: 'center', padding: 24, color: '#555', fontSize: 12 }}>
+            — {total?.toLocaleString()} video{total === 1 ? '' : 's'} —
+          </p>
+        )}
       </main>
 
       {/* ── Player overlay ── */}
