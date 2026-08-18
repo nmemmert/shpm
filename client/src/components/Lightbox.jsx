@@ -57,6 +57,21 @@ export default function Lightbox({ photos, index, onClose, onChange, onStarChang
           >
             ★
           </IconBtn>
+          <a
+            href={`/api/photos/${photo.id}/download`}
+            download
+            title="Download original"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 6, color: '#888', cursor: 'pointer',
+              width: 32, height: 32,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 15, textDecoration: 'none', flexShrink: 0,
+            }}
+          >
+            ↓
+          </a>
           <IconBtn
             onClick={() => setShowInfo(s => !s)}
             active={showInfo}

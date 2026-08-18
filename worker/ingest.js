@@ -28,6 +28,11 @@ export async function ingestFile(filepath, db, posterDir, settings = {}) {
   return ingestPhoto(filepath, db, posterDir, settings);
 }
 
+function fmtShutter(t) {
+  if (t >= 1) return `${t}s`;
+  return `1/${Math.round(1 / t)}s`;
+}
+
 // ── Photo ingest ───────────────────────────────────────────────────────────────
 
 async function ingestPhoto(filepath, db, posterDir, settings) {
@@ -43,12 +48,18 @@ async function ingestPhoto(filepath, db, posterDir, settings) {
   let exif = {};
   try {
     exif = await exifr.parse(filepath, {
-      pick: ['DateTimeOriginal', 'Make', 'Model', 'Orientation'],
+      pick: ['DateTimeOriginal', 'Make', 'Model', 'Orientation',
+             'ISO', 'FNumber', 'ExposureTime', 'FocalLength', 'LensModel'],
     }) ?? {};
   } catch {}
 
-  const dateTaken   = exif.DateTimeOriginal ?? null;
-  const cameraModel = [exif.Make, exif.Model].filter(Boolean).join(' ') || null;
+  const dateTaken    = exif.DateTimeOriginal ?? null;
+  const cameraModel  = [exif.Make, exif.Model].filter(Boolean).join(' ') || null;
+  const iso          = exif.ISO          ?? null;
+  const aperture     = exif.FNumber      != null ? Math.round(exif.FNumber * 10) / 10 : null;
+  const focalLength  = exif.FocalLength  != null ? Math.round(exif.FocalLength)       : null;
+  const lensModel    = exif.LensModel    ?? null;
+  const shutterSpeed = exif.ExposureTime != null ? fmtShutter(exif.ExposureTime)      : null;
 
   let gpsLat = null, gpsLon = null;
   try {
@@ -109,6 +120,11 @@ async function ingestPhoto(filepath, db, posterDir, settings) {
     place_country: placeCountry,
     media_type:    'photo',
     duration:      null,
+    iso,
+    aperture,
+    shutter_speed: shutterSpeed,
+    focal_length:  focalLength,
+    lens_model:    lensModel,
   });
 
   console.log(`[ingest] ${path.basename(filepath)}`);

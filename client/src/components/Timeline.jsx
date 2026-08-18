@@ -22,7 +22,7 @@ function monthLabel(dateTaken) {
   return new Date(dateTaken).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
-export default function Timeline({ photos, onSelect }) {
+export default function Timeline({ photos, onSelect, selected, onToggle, selectionActive }) {
   if (!photos.length) return null;
 
   const groups = groupByMonth(photos);
@@ -40,6 +40,9 @@ export default function Timeline({ photos, onSelect }) {
             photos={group.photos}
             startIdx={startIdx}
             onSelect={onSelect}
+            selected={selected}
+            onToggle={onToggle}
+            selectionActive={selectionActive}
           />
         );
       })}

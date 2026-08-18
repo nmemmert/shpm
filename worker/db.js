@@ -115,6 +115,11 @@ export function openDb(dbPath) {
   try { db.exec('ALTER TABLE photos ADD COLUMN place_country TEXT'); } catch {}
   try { db.exec("ALTER TABLE photos ADD COLUMN media_type TEXT NOT NULL DEFAULT 'photo'"); } catch {}
   try { db.exec('ALTER TABLE photos ADD COLUMN duration REAL'); } catch {}
+  try { db.exec('ALTER TABLE photos ADD COLUMN iso INTEGER'); } catch {}
+  try { db.exec('ALTER TABLE photos ADD COLUMN aperture REAL'); } catch {}
+  try { db.exec('ALTER TABLE photos ADD COLUMN shutter_speed TEXT'); } catch {}
+  try { db.exec('ALTER TABLE photos ADD COLUMN focal_length REAL'); } catch {}
+  try { db.exec('ALTER TABLE photos ADD COLUMN lens_model TEXT'); } catch {}
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_starred     ON photos(starred)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_place_city  ON photos(place_city)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_media_type  ON photos(media_type)');
@@ -128,11 +133,13 @@ export function openDb(dbPath) {
       INSERT OR IGNORE INTO photos
         (filepath, thumb_path, preview_path, date_taken, date_imported,
          camera_model, gps_lat, gps_lon, phash, width, height, filesize,
-         place_city, place_country, media_type, duration)
+         place_city, place_country, media_type, duration,
+         iso, aperture, shutter_speed, focal_length, lens_model)
       VALUES
         (@filepath, @thumb_path, @preview_path, @date_taken, @date_imported,
          @camera_model, @gps_lat, @gps_lon, @phash, @width, @height, @filesize,
-         @place_city, @place_country, @media_type, @duration)
+         @place_city, @place_country, @media_type, @duration,
+         @iso, @aperture, @shutter_speed, @focal_length, @lens_model)
     `),
     exists:   db.prepare('SELECT 1 FROM photos WHERE filepath = ? LIMIT 1'),
     remove:   db.prepare('DELETE FROM photos WHERE filepath = ?'),

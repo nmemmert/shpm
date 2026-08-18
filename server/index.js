@@ -156,6 +156,11 @@ function mapPhoto(p) {
     preview_url:   posterUrl(p.preview_path),
     media_type:    p.media_type    ?? 'photo',
     duration:      p.duration      ?? null,
+    iso:           p.iso           ?? null,
+    aperture:      p.aperture      ?? null,
+    shutter_speed: p.shutter_speed ?? null,
+    focal_length:  p.focal_length  ?? null,
+    lens_model:    p.lens_model    ?? null,
   };
 }
 
@@ -251,7 +256,8 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, photos: db.count() })
 const SELECT_COLS = `
   p.id, p.thumb_path, p.preview_path, p.date_taken, p.date_imported,
   p.camera_model, p.gps_lat, p.gps_lon, p.width, p.height, p.filesize,
-  p.starred, p.place_city, p.place_country, p.media_type, p.duration
+  p.starred, p.place_city, p.place_country, p.media_type, p.duration,
+  p.iso, p.aperture, p.shutter_speed, p.focal_length, p.lens_model
 `;
 
 app.get('/api/photos', (req, res) => {
@@ -311,6 +317,14 @@ app.get('/api/photos/map', (_req, res) => {
   })));
 });
 
+app.get('/api/photos/:id/download', (req, res) => {
+  const row = db.raw.prepare('SELECT filepath FROM photos WHERE id = ?').get(req.params.id);
+  if (!row) return notFound(res);
+  if (!fs.existsSync(row.filepath)) return notFound(res);
+  res.setHeader('Content-Disposition', `attachment; filename="${path.basename(row.filepath)}"`);
+  fs.createReadStream(row.filepath).pipe(res);
+});
+
 app.get('/api/photos/:id', (req, res) => {
   const row = db.raw.prepare('SELECT * FROM photos WHERE id = ?').get(req.params.id);
   if (!row) return notFound(res);
@@ -321,6 +335,16 @@ app.get('/api/photos/:id', (req, res) => {
     tags:        db.getPhotoTags(row.id),
     collections: db.getPhotoCollections(row.id),
   });
+});
+
+app.patch('/api/photos/bulk', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter(Boolean) : [];
+  if (!ids.length) return badRequest(res, 'ids required');
+  if ('starred' in req.body) {
+    const ph = ids.map(() => '?').join(',');
+    db.raw.prepare(`UPDATE photos SET starred = ? WHERE id IN (${ph})`).run(req.body.starred ? 1 : 0, ...ids);
+  }
+  res.sendStatus(204);
 });
 
 app.patch('/api/photos/:id', (req, res) => {
@@ -362,6 +386,84 @@ app.post('/api/collections', (req, res) => {
     if (e.message.includes('UNIQUE')) return badRequest(res, 'collection already exists');
     throw e;
   }
+});
+
+app.patch('/api/collections/:id', (req, res) => {
+  const name = (req.body.name ?? '').trim().slice(0, 200);
+  if (!name) return badRequest(res, 'name required');
+  try {
+    db.raw.prepare('UPDATE collections SET name = ? WHERE id = ?').run(name, parseInt(req.params.id, 10));
+    res.sendStatus(204);
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return badRequest(res, 'collection already exists');
+    throw e;
+  }
+});
+
+app.delete('/api/collections/:id', (req, res) => {
+  db.raw.prepare('DELETE FROM collections WHERE id = ?').run(parseInt(req.params.id, 10));
+  res.sendStatus(204);
+});
+
+// ── Albums (manual + smart auto-albums) ───────────────────────────────────────
+
+app.get('/api/albums', (_req, res) => {
+  const manual = db.raw.prepare(`
+    SELECT c.id, c.name, c.description, c.created_at,
+      COUNT(pc.photo_id) AS photo_count,
+      (SELECT p.thumb_path FROM photo_collections pc2 JOIN photos p ON p.id = pc2.photo_id
+       WHERE pc2.collection_id = c.id ORDER BY p.date_taken DESC, p.id DESC LIMIT 1) AS cover_path
+    FROM collections c LEFT JOIN photo_collections pc ON pc.collection_id = c.id
+    GROUP BY c.id ORDER BY c.name
+  `).all();
+
+  const years = db.raw.prepare(`
+    SELECT year, count, cover_path FROM (
+      SELECT strftime('%Y', date_taken) AS year,
+        COUNT(*) OVER (PARTITION BY strftime('%Y', date_taken)) AS count,
+        thumb_path AS cover_path,
+        ROW_NUMBER() OVER (PARTITION BY strftime('%Y', date_taken) ORDER BY date_taken DESC, id DESC) AS rn
+      FROM photos WHERE date_taken IS NOT NULL AND (media_type IS NULL OR media_type = 'photo')
+    ) WHERE rn = 1 ORDER BY year DESC
+  `).all();
+
+  const cities = db.raw.prepare(`
+    SELECT city, country, count, cover_path FROM (
+      SELECT place_city AS city, place_country AS country,
+        COUNT(*) OVER (PARTITION BY place_city) AS count,
+        thumb_path AS cover_path,
+        ROW_NUMBER() OVER (PARTITION BY place_city ORDER BY date_taken DESC, id DESC) AS rn
+      FROM photos WHERE place_city IS NOT NULL AND (media_type IS NULL OR media_type = 'photo')
+    ) WHERE rn = 1 ORDER BY count DESC LIMIT 50
+  `).all();
+
+  const cameras = db.raw.prepare(`
+    SELECT camera, count, cover_path FROM (
+      SELECT camera_model AS camera,
+        COUNT(*) OVER (PARTITION BY camera_model) AS count,
+        thumb_path AS cover_path,
+        ROW_NUMBER() OVER (PARTITION BY camera_model ORDER BY date_taken DESC, id DESC) AS rn
+      FROM photos WHERE camera_model IS NOT NULL AND (media_type IS NULL OR media_type = 'photo')
+    ) WHERE rn = 1 ORDER BY count DESC
+  `).all();
+
+  res.json({
+    manual:  manual.map(c => ({ ...c, cover_url: posterUrl(c.cover_path), cover_path: undefined })),
+    auto: {
+      years:   years.map(r   => ({ year:   r.year,   count: r.count,   cover_url: posterUrl(r.cover_path) })),
+      cities:  cities.map(r  => ({ city:   r.city,   country: r.country, count: r.count,  cover_url: posterUrl(r.cover_path) })),
+      cameras: cameras.map(r => ({ camera: r.camera, count: r.count,   cover_url: posterUrl(r.cover_path) })),
+    },
+  });
+});
+
+app.post('/api/photos/bulk/collections', (req, res) => {
+  const ids   = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter(Boolean) : [];
+  const colId = parseInt(req.body.collectionId, 10);
+  if (!ids.length || !colId) return badRequest(res, 'ids and collectionId required');
+  const stmt = db.raw.prepare('INSERT OR IGNORE INTO photo_collections (photo_id, collection_id) VALUES (?, ?)');
+  db.raw.transaction(() => { for (const id of ids) stmt.run(id, colId); })();
+  res.sendStatus(204);
 });
 
 app.post('/api/photos/:id/collections', (req, res) => {

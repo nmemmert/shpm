@@ -130,6 +130,28 @@ export function fetchMemories() {
   return api(`/api/memories/today?date=${date}`);
 }
 
+// Albums
+export function fetchAlbums() {
+  return api('/api/albums');
+}
+
+export function renameCollection(id, name) {
+  return api(`/api/collections/${id}`, { method: 'PATCH', ...json({ name }) });
+}
+
+export function deleteCollection(id) {
+  return api(`/api/collections/${id}`, { method: 'DELETE' });
+}
+
+// Bulk operations
+export function bulkStar(ids, starred) {
+  return api('/api/photos/bulk', { method: 'PATCH', ...json({ ids, starred }) });
+}
+
+export function bulkAddToCollection(ids, collectionId) {
+  return api('/api/photos/bulk/collections', { method: 'POST', ...json({ ids, collectionId }) });
+}
+
 // Duplicates
 export function fetchDuplicates() {
   return api('/api/duplicates');

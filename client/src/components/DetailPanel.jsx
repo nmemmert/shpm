@@ -42,9 +42,15 @@ export default function DetailPanel({ photoId }) {
         )}
       </Section>
 
-      {photo.camera_model && (
+      {(photo.camera_model || photo.lens_model || photo.focal_length != null ||
+        photo.aperture != null || photo.shutter_speed || photo.iso != null) && (
         <Section label="Camera">
-          <Row k="Model" v={photo.camera_model} />
+          {photo.camera_model  && <Row k="Model"    v={photo.camera_model} />}
+          {photo.lens_model    && <Row k="Lens"     v={photo.lens_model} />}
+          {photo.focal_length  != null && <Row k="Focal"    v={`${photo.focal_length}mm`} />}
+          {photo.aperture      != null && <Row k="Aperture" v={`ƒ/${photo.aperture}`} />}
+          {photo.shutter_speed && <Row k="Shutter"  v={photo.shutter_speed} />}
+          {photo.iso           != null && <Row k="ISO"      v={`ISO ${photo.iso}`} />}
         </Section>
       )}
 

@@ -1,6 +1,6 @@
 import PhotoCard from './PhotoCard.jsx';
 
-export default function MonthGroup({ label, photos, startIdx, onSelect }) {
+export default function MonthGroup({ label, photos, startIdx, onSelect, selected, onToggle, selectionActive }) {
   return (
     <section style={{ marginBottom: 8 }}>
       <h2 style={{
@@ -28,6 +28,9 @@ export default function MonthGroup({ label, photos, startIdx, onSelect }) {
             key={photo.id}
             photo={photo}
             onClick={() => onSelect(startIdx + i)}
+            isSelected={selected?.has(photo.id) ?? false}
+            onToggle={onToggle}
+            selectionActive={selectionActive}
           />
         ))}
       </div>

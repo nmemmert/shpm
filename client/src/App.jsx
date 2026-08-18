@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchPhotos, fetchLibraryStats, fetchVideoStats } from './api/photos.js';
+import { fetchPhotos, fetchLibraryStats, fetchVideoStats, bulkStar, bulkAddToCollection } from './api/photos.js';
 import Timeline from './components/Timeline.jsx';
 import Lightbox from './components/Lightbox.jsx';
 import FilterSidebar from './components/FilterSidebar.jsx';
@@ -11,6 +11,7 @@ import { lazy, Suspense } from 'react';
 const MapView      = lazy(() => import('./components/MapView.jsx'));
 const MemoriesView = lazy(() => import('./components/MemoriesView.jsx'));
 const VideosView   = lazy(() => import('./components/VideosView.jsx'));
+const AlbumsView   = lazy(() => import('./components/AlbumsView.jsx'));
 
 const EMPTY_FILTERS       = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
 const EMPTY_VIDEO_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
@@ -30,9 +31,10 @@ export default function App() {
   const [videoFilters, setVideoFilters] = useState(EMPTY_VIDEO_FILTERS);
   const [videoStats, setVideoStats]   = useState(null);
 
-  const [lbPhotos, setLbPhotos]       = useState(null);
-  const [lbIndex, setLbIndex]         = useState(null);
+  const [lbPhotos, setLbPhotos]         = useState(null);
+  const [lbIndex, setLbIndex]           = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [selected, setSelected]         = useState(new Set());
 
   const loadingRef  = useRef(false);
   const sentinelRef = useRef(null);
@@ -90,6 +92,46 @@ export default function App() {
     return () => obs.disconnect();
   }, [nextCursor, view, filters]);
 
+  function toggleSelect(photoId) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(photoId) ? next.delete(photoId) : next.add(photoId);
+      return next;
+    });
+  }
+
+  function clearSelection() { setSelected(new Set()); }
+
+  async function handleBulkStar(starred) {
+    const ids = [...selected];
+    try {
+      await bulkStar(ids, starred);
+      const idSet = new Set(ids);
+      setPhotos(prev => prev.map(p => idSet.has(p.id) ? { ...p, starred } : p));
+      clearSelection();
+      loadStats();
+    } catch {}
+  }
+
+  async function handleBulkAddToCollection(collectionId) {
+    if (!collectionId) return;
+    try {
+      await bulkAddToCollection([...selected], Number(collectionId));
+      clearSelection();
+    } catch {}
+  }
+
+  function handleSelectAlbum({ type, collectionId, year, city, camera }) {
+    const f = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
+    if (type === 'collection') f.collectionId = String(collectionId);
+    else if (type === 'year')  { f.from = `${year}-01-01`; f.to = `${year}-12-31`; }
+    else if (type === 'city')  f.city = city;
+    else if (type === 'camera') f.q = camera;
+    setFilters(f);
+    setView('library');
+    clearSelection();
+  }
+
   function openLightbox(photosArr, idx) {
     setLbPhotos(photosArr);
     setLbIndex(idx);
@@ -128,7 +170,7 @@ export default function App() {
         </span>
 
         <nav style={{ display: 'flex', gap: 2 }}>
-          <Tab active={view === 'library'}    onClick={() => setView('library')}>
+          <Tab active={view === 'library'}    onClick={() => { setView('library'); clearSelection(); }}>
             Library
             {total !== null && (
               <span style={{ marginLeft: 6, fontSize: 12, color: view === 'library' ? '#777' : '#666' }}>
@@ -136,10 +178,11 @@ export default function App() {
               </span>
             )}
           </Tab>
-          <Tab active={view === 'videos'}     onClick={() => setView('videos')}>Videos</Tab>
-          <Tab active={view === 'memories'}   onClick={() => setView('memories')}>Memories</Tab>
-          <Tab active={view === 'map'}        onClick={() => setView('map')}>Map</Tab>
-          <Tab active={view === 'duplicates'} onClick={() => setView('duplicates')}>
+          <Tab active={view === 'albums'}     onClick={() => { setView('albums'); clearSelection(); }}>Albums</Tab>
+          <Tab active={view === 'videos'}     onClick={() => { setView('videos'); clearSelection(); }}>Videos</Tab>
+          <Tab active={view === 'memories'}   onClick={() => { setView('memories'); clearSelection(); }}>Memories</Tab>
+          <Tab active={view === 'map'}        onClick={() => { setView('map'); clearSelection(); }}>Map</Tab>
+          <Tab active={view === 'duplicates'} onClick={() => { setView('duplicates'); clearSelection(); }}>
             Duplicates
             {dupeCount > 0 && (
               <span style={{
@@ -227,7 +270,13 @@ export default function App() {
                   )}
                 </div>
               )}
-              <Timeline photos={photos} onSelect={(idx) => openLightbox(photos, idx)} />
+              <Timeline
+                photos={photos}
+                onSelect={(idx) => openLightbox(photos, idx)}
+                selected={selected}
+                onToggle={toggleSelect}
+                selectionActive={selected.size > 0}
+              />
               <div ref={sentinelRef} style={{ height: 1 }} />
               {loading && <p style={{ textAlign: 'center', padding: 24, color: '#444', fontSize: 13 }}>Loading…</p>}
               {nextCursor === null && photos.length > 0 && !loading && (
@@ -236,6 +285,13 @@ export default function App() {
                 </p>
               )}
             </>
+          )}
+
+          {/* Albums */}
+          {view === 'albums' && (
+            <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
+              <AlbumsView onSelectAlbum={handleSelectAlbum} />
+            </Suspense>
           )}
 
           {/* Videos */}
@@ -271,6 +327,41 @@ export default function App() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && view === 'library' && (
+        <div style={{
+          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          background: '#1c1c1c', border: '1px solid #2e2e2e', borderRadius: 12,
+          padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 10,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+          zIndex: 500, whiteSpace: 'nowrap',
+        }}>
+          <span style={{ fontSize: 13, color: '#ccc', fontWeight: 600 }}>
+            {selected.size} selected
+          </span>
+          <div style={{ width: 1, height: 18, background: '#333', flexShrink: 0 }} />
+          <button onClick={() => handleBulkStar(true)}  style={bulkBtn}>★ Star</button>
+          <button onClick={() => handleBulkStar(false)} style={bulkBtn}>☆ Unstar</button>
+          {stats?.collections?.length > 0 && (
+            <select
+              defaultValue=""
+              onChange={e => { handleBulkAddToCollection(e.target.value); e.target.value = ''; }}
+              style={{
+                background: '#111', border: '1px solid #333', borderRadius: 6,
+                color: '#ccc', cursor: 'pointer', fontSize: 12, padding: '5px 8px',
+              }}
+            >
+              <option value="">Add to album…</option>
+              {stats.collections.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <div style={{ width: 1, height: 18, background: '#333', flexShrink: 0 }} />
+          <button onClick={clearSelection} style={{ ...bulkBtn, color: '#666' }}>✕ Clear</button>
+        </div>
+      )}
+
       {/* Settings panel */}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
@@ -287,6 +378,11 @@ export default function App() {
     </>
   );
 }
+
+const bulkBtn = {
+  background: 'transparent', border: '1px solid #333', borderRadius: 6,
+  color: '#ccc', cursor: 'pointer', fontSize: 12, padding: '5px 11px',
+};
 
 function Tab({ active, onClick, children }) {
   return (
