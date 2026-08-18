@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { openDb } from '../worker/db.js';
 import { scan, getGroups } from './dedupe.js';
@@ -37,6 +38,8 @@ function mapPhoto(p) {
     height:        p.height,
     filesize:      p.filesize,
     starred:       p.starred === 1,
+    place_city:    p.place_city    ?? null,
+    place_country: p.place_country ?? null,
     thumb_url:     posterUrl(p.thumb_path),
     preview_url:   posterUrl(p.preview_path),
   };
@@ -45,7 +48,7 @@ function mapPhoto(p) {
 function badRequest(res, msg) { res.status(400).json({ error: msg }); }
 function notFound(res)        { res.status(404).json({ error: 'not found' }); }
 
-function buildFilter(q, from, to, tagId, collectionId, starred) {
+function buildFilter(q, from, to, tagId, collectionId, starred, city) {
   const joinParts  = [];
   const joinParams = [];
   const condParts  = [];
@@ -66,6 +69,7 @@ function buildFilter(q, from, to, tagId, collectionId, starred) {
   if (from)         { condParts.push('p.date_taken >= ?'); condParams.push(from); }
   if (to)           { condParts.push('p.date_taken <= ?'); condParams.push(to);   }
   if (starred === '1') condParts.push('p.starred = 1');
+  if (city)            { condParts.push('p.place_city = ?'); condParams.push(city); }
 
   return {
     joinSql:  joinParts.join(' '),
@@ -106,10 +110,14 @@ app.get('/api/library/stats', (_req, res) => {
   const years   = db.raw.prepare(
     "SELECT strftime('%Y', date_taken) AS year, COUNT(*) AS count FROM photos WHERE date_taken IS NOT NULL GROUP BY year ORDER BY year DESC"
   ).all();
+  const cities  = db.raw.prepare(
+    "SELECT place_city AS city, place_country AS country, COUNT(*) AS count FROM photos WHERE place_city IS NOT NULL GROUP BY place_city ORDER BY count DESC LIMIT 100"
+  ).all();
   res.json({
     total: db.count(),
     starred,
     years,
+    cities,
     tags:        db.listAllTags(),
     collections: db.listCollections(),
   });
@@ -121,15 +129,16 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, photos: db.count() })
 
 const SELECT_COLS = `
   p.id, p.thumb_path, p.preview_path, p.date_taken, p.date_imported,
-  p.camera_model, p.gps_lat, p.gps_lon, p.width, p.height, p.filesize, p.starred
+  p.camera_model, p.gps_lat, p.gps_lon, p.width, p.height, p.filesize,
+  p.starred, p.place_city, p.place_country
 `;
 
 app.get('/api/photos', (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit ?? '100', 10), 500);
   const cursor = req.query.cursor ?? null;
-  const { q, from, to, tagId, collectionId, starred } = req.query;
+  const { q, from, to, tagId, collectionId, starred, city } = req.query;
 
-  const { joinSql, whereSql, params } = buildFilter(q, from, to, tagId, collectionId, starred);
+  const { joinSql, whereSql, params } = buildFilter(q, from, to, tagId, collectionId, starred, city);
 
   let cursorSql    = '';
   const cursorParams = [];
@@ -316,6 +325,28 @@ app.patch('/api/watch-folders/:id', (req, res) => {
 app.post('/api/admin/clear-dismissals', (_req, res) => {
   db.raw.prepare('UPDATE duplicate_pairs SET dismissed = 0').run();
   res.sendStatus(204);
+});
+
+// ── Filesystem browser ────────────────────────────────────────────────────────
+
+app.get('/api/fs/browse', (req, res) => {
+  const raw = (req.query.path ?? '/photos').replace(/\0/g, '');
+  const dir = path.resolve('/', raw);   // normalize — prevents traversal via ../../
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    return res.status(404).json({ error: 'not a directory' });
+  }
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return res.status(403).json({ error: 'permission denied' });
+  }
+  const dirs   = entries
+    .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+    .map(e => e.name)
+    .sort((a, b) => a.localeCompare(b));
+  const parent = dir === '/' ? null : path.dirname(dir);
+  res.json({ path: dir, parent, dirs });
 });
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────

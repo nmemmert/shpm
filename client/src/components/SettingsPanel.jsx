@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   fetchSettings, patchSettings,
   fetchWatchFolders, addWatchFolder, removeWatchFolder, toggleWatchFolder,
-  clearDismissals,
+  clearDismissals, fetchDirBrowser,
 } from '../api/photos.js';
 
 export default function SettingsPanel({ onClose }) {
@@ -11,6 +11,11 @@ export default function SettingsPanel({ onClose }) {
   const [newPath, setNewPath]     = useState('');
   const [saving, setSaving]       = useState(false);
   const [cleared, setCleared]     = useState(false);
+
+  // Folder browser
+  const [browseOpen,   setBrowseOpen]   = useState(false);
+  const [browseData,   setBrowseData]   = useState(null);   // { path, parent, dirs }
+  const [browseLoading, setBrowseLoading] = useState(false);
 
   useEffect(() => {
     fetchSettings().then(setSettings);
@@ -36,6 +41,32 @@ export default function SettingsPanel({ onClose }) {
     const updated = await addWatchFolder(p);
     setFolders(updated);
     setNewPath('');
+  }
+
+  async function openBrowser() {
+    setBrowseOpen(true);
+    setBrowseLoading(true);
+    try {
+      const data = await fetchDirBrowser('/photos');
+      setBrowseData(data);
+    } catch {
+      setBrowseData({ path: '/', parent: null, dirs: [] });
+    }
+    setBrowseLoading(false);
+  }
+
+  async function browseInto(dirPath) {
+    setBrowseLoading(true);
+    try {
+      const data = await fetchDirBrowser(dirPath);
+      setBrowseData(data);
+    } catch {}
+    setBrowseLoading(false);
+  }
+
+  function selectBrowsed() {
+    if (browseData?.path) setNewPath(browseData.path);
+    setBrowseOpen(false);
   }
 
   async function handleRemoveFolder(id) {
@@ -145,6 +176,18 @@ export default function SettingsPanel({ onClose }) {
                   }}
                 />
                 <button
+                  onClick={openBrowser}
+                  title="Browse filesystem"
+                  style={{
+                    background: browseOpen ? '#1e2f45' : '#181818',
+                    border: '1px solid ' + (browseOpen ? '#2a4a6a' : '#222'),
+                    borderRadius: 5, color: browseOpen ? '#7ab8f5' : '#555',
+                    cursor: 'pointer', padding: '5px 9px', fontSize: 13,
+                  }}
+                >
+                  📁
+                </button>
+                <button
                   onClick={handleAddFolder}
                   disabled={!newPath.trim()}
                   style={{
@@ -158,6 +201,88 @@ export default function SettingsPanel({ onClose }) {
                   Add
                 </button>
               </div>
+
+              {/* Inline folder browser */}
+              {browseOpen && (
+                <div style={{
+                  margin: '4px 18px 8px',
+                  background: '#0d0d0d', border: '1px solid #222',
+                  borderRadius: 6, overflow: 'hidden',
+                }}>
+                  {/* Breadcrumb + up */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 10px', borderBottom: '1px solid #1a1a1a',
+                    background: '#131313',
+                  }}>
+                    {browseData?.parent !== null && browseData?.parent !== undefined && (
+                      <button
+                        onClick={() => browseInto(browseData.parent)}
+                        style={{
+                          background: 'none', border: 'none', color: '#4d9eff',
+                          cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0,
+                        }}
+                        title="Up"
+                      >↑</button>
+                    )}
+                    <span style={{
+                      flex: 1, fontSize: 11, color: '#666', fontFamily: 'monospace',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      direction: 'rtl', textAlign: 'left',
+                    }}>
+                      {browseLoading ? '…' : (browseData?.path ?? '')}
+                    </span>
+                    <button
+                      onClick={selectBrowsed}
+                      title="Use this path"
+                      style={{
+                        background: '#1e2f45', border: '1px solid #2a4a6a',
+                        borderRadius: 4, color: '#7ab8f5',
+                        cursor: 'pointer', fontSize: 11, padding: '2px 8px', flexShrink: 0,
+                      }}
+                    >
+                      Select
+                    </button>
+                    <button
+                      onClick={() => setBrowseOpen(false)}
+                      style={{
+                        background: 'none', border: 'none', color: '#444',
+                        cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0,
+                      }}
+                    >✕</button>
+                  </div>
+
+                  {/* Directory list */}
+                  <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                    {!browseLoading && browseData?.dirs?.length === 0 && (
+                      <p style={{ padding: '10px 12px', color: '#333', fontSize: 12, margin: 0 }}>
+                        No subdirectories
+                      </p>
+                    )}
+                    {browseData?.dirs?.map(name => {
+                      const full = (browseData.path === '/' ? '' : browseData.path) + '/' + name;
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => browseInto(full)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 7,
+                            width: '100%', padding: '5px 10px',
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: '#bbb', fontSize: 12, textAlign: 'left',
+                            fontFamily: 'monospace',
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#1a1a1a'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                        >
+                          <span style={{ color: '#4d9eff', flexShrink: 0 }}>📁</span>
+                          {name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </Section>
 
             {/* ── Ingestion ── */}

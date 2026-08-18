@@ -10,7 +10,7 @@ import SettingsPanel from './components/SettingsPanel.jsx';
 import { lazy, Suspense } from 'react';
 const MapView = lazy(() => import('./components/MapView.jsx'));
 
-const EMPTY_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '' };
+const EMPTY_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
 const SIDEBAR_W = 210;
 
 export default function App() {
@@ -101,7 +101,7 @@ export default function App() {
     loadStats();
   }
 
-  const hasFilter = filters.q || filters.from || filters.to || filters.tagId || filters.collectionId || filters.starred;
+  const hasFilter = filters.q || filters.from || filters.to || filters.tagId || filters.collectionId || filters.starred || filters.city;
 
   return (
     <>

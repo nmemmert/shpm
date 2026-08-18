@@ -9,27 +9,27 @@ export default function FilterSidebar({ filters, onChange, stats, total }) {
     setExpanded(e => ({ ...e, [section]: !e[section] }));
   }
 
-  // Derive active sidebar selection
-  const selectedYear  = (filters.from && filters.to)
-    ? filters.from.slice(0, 4)
-    : null;
-  const isStarred     = filters.starred === '1';
-  const isAll         = !isStarred && !selectedYear && !filters.tagId && !filters.collectionId;
+  const selectedYear = (filters.from && filters.to) ? filters.from.slice(0, 4) : null;
+  const isStarred    = filters.starred === '1';
+  const isAll        = !isStarred && !selectedYear && !filters.tagId && !filters.collectionId && !filters.city;
 
   function selectAll() {
-    onChange({ q: filters.q, from: '', to: '', tagId: '', collectionId: '', starred: '' });
+    onChange({ q: filters.q, from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' });
   }
   function selectStarred() {
-    onChange({ q: filters.q, from: '', to: '', tagId: '', collectionId: '', starred: '1' });
+    onChange({ q: filters.q, from: '', to: '', tagId: '', collectionId: '', starred: '1', city: '' });
   }
   function selectYear(year) {
-    onChange({ q: filters.q, from: `${year}-01-01`, to: `${year}-12-31`, tagId: '', collectionId: '', starred: '' });
+    onChange({ q: filters.q, from: `${year}-01-01`, to: `${year}-12-31`, tagId: '', collectionId: '', starred: '', city: '' });
   }
   function selectTag(id) {
-    onChange({ q: filters.q, from: '', to: '', tagId: String(id), collectionId: '', starred: '' });
+    onChange({ q: filters.q, from: '', to: '', tagId: String(id), collectionId: '', starred: '', city: '' });
   }
   function selectCollection(id) {
-    onChange({ q: filters.q, from: '', to: '', tagId: '', collectionId: String(id), starred: '' });
+    onChange({ q: filters.q, from: '', to: '', tagId: '', collectionId: String(id), starred: '', city: '' });
+  }
+  function selectCity(city) {
+    onChange({ q: filters.q, from: '', to: '', tagId: '', collectionId: '', starred: '', city });
   }
 
   return (
@@ -69,6 +69,26 @@ export default function FilterSidebar({ filters, onChange, stats, total }) {
           label="Favorites"
           count={stats?.starred}
         />
+      )}
+
+      {/* Places */}
+      {stats?.cities?.length > 0 && (
+        <Section title="Places">
+          {(expanded.cities ? stats.cities : stats.cities.slice(0, MAX_DEFAULT)).map(({ city, country, count }) => (
+            <Row
+              key={city}
+              active={filters.city === city}
+              onClick={() => selectCity(city)}
+              label={city}
+              sublabel={country}
+              count={count}
+              indent
+            />
+          ))}
+          {stats.cities.length > MAX_DEFAULT && (
+            <SeeMore expanded={expanded.cities} onClick={() => toggle('cities')} />
+          )}
+        </Section>
       )}
 
       {/* Date Taken */}
@@ -146,7 +166,7 @@ function Section({ title, children }) {
   );
 }
 
-function Row({ active, onClick, icon, iconColor, label, count, indent }) {
+function Row({ active, onClick, icon, iconColor, label, sublabel, count, indent }) {
   return (
     <button
       onClick={onClick}
@@ -167,6 +187,11 @@ function Row({ active, onClick, icon, iconColor, label, count, indent }) {
       )}
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {label}
+        {sublabel && (
+          <span style={{ marginLeft: 5, fontSize: 10, color: active ? '#4a6a8a' : '#2a2a2a' }}>
+            {sublabel}
+          </span>
+        )}
       </span>
       {count != null && (
         <span style={{ fontSize: 11, color: active ? '#5a7a9a' : '#333', flexShrink: 0 }}>

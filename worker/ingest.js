@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import exifr from 'exifr';
 import { computeDHash } from './hash.js';
+import { reverseGeocode } from './geocode.js';
 
 const SUPPORTED = new Set([
   '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif',
@@ -36,6 +37,13 @@ export async function ingestFile(filepath, db, posterDir, settings = {}) {
   const cameraModel = [exif.Make, exif.Model].filter(Boolean).join(' ') || null;
   const gpsLat      = exif.latitude  ?? null;
   const gpsLon      = exif.longitude ?? null;
+
+  let placeCity = null, placeCountry = null;
+  if (gpsLat !== null && gpsLon !== null) {
+    const place = await reverseGeocode(gpsLat, gpsLon);
+    placeCity    = place?.city    ?? null;
+    placeCountry = place?.country ?? null;
+  }
 
   const { dir, thumb, preview } = posterPaths(filepath, posterDir, dateTaken ?? stat.mtime);
   fs.mkdirSync(dir, { recursive: true });
@@ -78,7 +86,9 @@ export async function ingestFile(filepath, db, posterDir, settings = {}) {
     phash,
     width,
     height,
-    filesize: stat.size,
+    filesize:      stat.size,
+    place_city:    placeCity,
+    place_country: placeCountry,
   });
 
   console.log(`[ingest] ${path.basename(filepath)}`);

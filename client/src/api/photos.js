@@ -10,7 +10,7 @@ const json = (body) => ({
 });
 
 // Library
-export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectionId, starred } = {}) {
+export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectionId, starred, city } = {}) {
   const p = new URLSearchParams({ limit });
   if (cursor)       p.set('cursor',       cursor);
   if (q)            p.set('q',            q);
@@ -19,7 +19,12 @@ export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectio
   if (tagId)        p.set('tagId',        tagId);
   if (collectionId) p.set('collectionId', collectionId);
   if (starred)      p.set('starred',      starred);
+  if (city)         p.set('city',         city);
   return api(`/api/photos?${p}`);
+}
+
+export function fetchDirBrowser(dirPath) {
+  return api(`/api/fs/browse?path=${encodeURIComponent(dirPath)}`);
 }
 
 export function fetchPhotoDetail(id) {
