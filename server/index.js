@@ -360,7 +360,6 @@ app.post('/api/sync/icloud', (_req, res) => {
     '--username',         s.icloud_apple_id,
     '--directory',        s.icloud_dest,
     '--cookie-directory', s.icloud_cookie_dir,
-    '--no-progress',
   ];
   if (s.icloud_password) args.push('--password', s.icloud_password);
 
