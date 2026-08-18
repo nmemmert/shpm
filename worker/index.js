@@ -2,8 +2,10 @@ import 'dotenv/config';
 import chokidar from 'chokidar';
 import path from 'path';
 import fs from 'fs';
+import exifr from 'exifr';
 import { openDb } from './db.js';
 import { ingestFile, isSupported } from './ingest.js';
+import { reverseGeocode } from './geocode.js';
 
 const PHOTO_DIR  = process.env.PHOTO_DIR  ?? null;
 const DB_PATH    = process.env.DB_PATH    ?? './data/library.db';
@@ -106,6 +108,40 @@ function syncWatchFolders() {
 // Initial sync then poll every 30s for UI-added folders
 syncWatchFolders();
 setInterval(syncWatchFolders, 30_000);
+
+// Backfill GPS for photos indexed before the exifr pick-filter bug was fixed
+async function backfillGps() {
+  const rows = db.raw.prepare(
+    "SELECT id, filepath FROM photos WHERE gps_lat IS NULL"
+  ).all().filter(r => fs.existsSync(r.filepath));
+
+  if (rows.length === 0) return;
+  console.log(`[worker] GPS backfill: checking ${rows.length} photos`);
+
+  const updateStmt = db.raw.prepare(
+    'UPDATE photos SET gps_lat = ?, gps_lon = ?, place_city = ?, place_country = ? WHERE id = ?'
+  );
+
+  let updated = 0;
+  for (const { id, filepath } of rows) {
+    try {
+      const gps = await exifr.gps(filepath);
+      if (gps?.latitude == null) continue;
+      let city = null, country = null;
+      try {
+        const place = await reverseGeocode(gps.latitude, gps.longitude);
+        city    = place?.city    ?? null;
+        country = place?.country ?? null;
+      } catch {}
+      updateStmt.run(gps.latitude, gps.longitude, city, country, id);
+      updated++;
+    } catch {}
+  }
+
+  if (updated > 0) console.log(`[worker] GPS backfill: updated ${updated} photos with location data`);
+}
+
+setTimeout(backfillGps, 5000);
 
 process.on('SIGINT', () => {
   console.log('\n[worker] shutting down');

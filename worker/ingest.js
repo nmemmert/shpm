@@ -44,14 +44,17 @@ async function ingestPhoto(filepath, db, posterDir, settings) {
   try {
     exif = await exifr.parse(filepath, {
       pick: ['DateTimeOriginal', 'Make', 'Model', 'Orientation'],
-      gps: true,
     }) ?? {};
   } catch {}
 
   const dateTaken   = exif.DateTimeOriginal ?? null;
   const cameraModel = [exif.Make, exif.Model].filter(Boolean).join(' ') || null;
-  const gpsLat      = exif.latitude  ?? null;
-  const gpsLon      = exif.longitude ?? null;
+
+  let gpsLat = null, gpsLon = null;
+  try {
+    const gps = await exifr.gps(filepath);
+    if (gps?.latitude != null) { gpsLat = gps.latitude; gpsLon = gps.longitude; }
+  } catch {}
 
   let placeCity = null, placeCountry = null;
   if (gpsLat !== null && gpsLon !== null) {
@@ -142,12 +145,15 @@ async function ingestVideo(filepath, db, posterDir, settings) {
     return;
   }
 
-  // 2. exifr — GPS + more accurate date (best-effort)
+  // 2. exifr — more accurate date + GPS (best-effort, parsed separately to avoid pick filtering GPS)
   let gpsLat = null, gpsLon = null;
   try {
-    const exif = await exifr.parse(filepath, { gps: true, pick: ['DateTimeOriginal'] }) ?? {};
+    const exif = await exifr.parse(filepath, { pick: ['DateTimeOriginal'] }) ?? {};
     if (exif.DateTimeOriginal) dateTaken = new Date(exif.DateTimeOriginal).toISOString();
-    if (exif.latitude != null) { gpsLat = exif.latitude; gpsLon = exif.longitude; }
+  } catch {}
+  try {
+    const gps = await exifr.gps(filepath);
+    if (gps?.latitude != null) { gpsLat = gps.latitude; gpsLon = gps.longitude; }
   } catch {}
 
   let placeCity = null, placeCountry = null;
