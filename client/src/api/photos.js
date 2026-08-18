@@ -109,6 +109,13 @@ export function triggerSync(source) {
   return api(`/api/sync/${source}`, { method: 'POST' });
 }
 
+// Memories
+export function fetchMemories() {
+  const d = new Date();
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return api(`/api/memories/today?date=${date}`);
+}
+
 // Duplicates
 export function fetchDuplicates() {
   return api('/api/duplicates');

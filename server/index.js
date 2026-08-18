@@ -501,6 +501,22 @@ app.post('/api/admin/clear-dismissals', (_req, res) => {
   res.sendStatus(204);
 });
 
+// ── Memories (photos on this day) ─────────────────────────────────────────────
+
+app.get('/api/memories/today', (req, res) => {
+  // Client sends its local date as YYYY-MM-DD so Docker's UTC clock doesn't cause off-by-one
+  const date = req.query.date ?? new Date().toISOString().slice(0, 10);
+  const monthDay = date.slice(5); // "MM-DD"
+  const rows = db.raw.prepare(`
+    SELECT ${SELECT_COLS}
+    FROM photos p
+    WHERE p.date_taken IS NOT NULL
+      AND strftime('%m-%d', p.date_taken) = ?
+    ORDER BY p.date_taken ASC
+  `).all(monthDay);
+  res.json({ photos: rows.map(mapPhoto) });
+});
+
 // ── Filesystem browser ────────────────────────────────────────────────────────
 
 app.get('/api/fs/browse', (req, res) => {

@@ -81,7 +81,8 @@ export default function MapView({ onOpenPhoto }) {
                       alt=""
                       onClick={() => onOpenPhoto(p)}
                       style={{
-                        width: '100%', maxWidth: 200, display: 'block',
+                        width: 200, height: 150,
+                        objectFit: 'cover', display: 'block',
                         cursor: 'pointer', borderRadius: 3,
                       }}
                     />
