@@ -19,7 +19,20 @@ const EMPTY_FILTERS       = { q: '', from: '', to: '', tagId: '', collectionId: 
 const EMPTY_VIDEO_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
 const SIDEBAR_W = 210;
 
+function useMobile() {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const handler = e => setMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return mobile;
+}
+
 export default function App() {
+  const isMobile = useMobile();
+
   const [view, setView]             = useState('library');
   const [photos, setPhotos]         = useState([]);
   const [nextCursor, setNextCursor] = useState(undefined);
@@ -28,18 +41,23 @@ export default function App() {
   const [error, setError]           = useState(null);
   const [dupeCount, setDupeCount]   = useState(0);
 
-  const [filters, setFilters]         = useState(EMPTY_FILTERS);
-  const [stats, setStats]             = useState(null);
+  const [filters, setFilters]           = useState(EMPTY_FILTERS);
+  const [stats, setStats]               = useState(null);
   const [videoFilters, setVideoFilters] = useState(EMPTY_VIDEO_FILTERS);
-  const [videoStats, setVideoStats]   = useState(null);
+  const [videoStats, setVideoStats]     = useState(null);
 
   const [lbPhotos, setLbPhotos]         = useState(null);
   const [lbIndex, setLbIndex]           = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [selected, setSelected]         = useState(new Set());
+  const [sidebarOpen, setSidebarOpen]   = useState(false);
+  const [moreOpen, setMoreOpen]         = useState(false);
 
   const loadingRef  = useRef(false);
   const sentinelRef = useRef(null);
+
+  // Close mobile sidebar when switching to desktop
+  useEffect(() => { if (!isMobile) setSidebarOpen(false); }, [isMobile]);
 
   const loadStats = useCallback(() => {
     fetchLibraryStats().then(setStats).catch(() => {});
@@ -53,7 +71,6 @@ export default function App() {
     }
   }, [view]);
 
-  // Reset + reload when filters change (debounce text search)
   useEffect(() => {
     const delay = filters.q ? 300 : 0;
     const timer = setTimeout(() => {
@@ -81,7 +98,6 @@ export default function App() {
     setLoading(false);
   }
 
-  // Infinite scroll sentinel
   useEffect(() => {
     if (!sentinelRef.current || !nextCursor || view !== 'library') return;
     const el  = sentinelRef.current;
@@ -157,16 +173,14 @@ export default function App() {
     setLbIndex(idx);
   }
 
-  // When a photo's star state changes in the lightbox, patch it in the local list
   function handleStarChange(updated) {
     setPhotos(prev => prev.map(p => p.id === updated.id ? { ...p, starred: updated.starred } : p));
     if (lbPhotos) {
       setLbPhotos(prev => prev.map(p => p.id === updated.id ? { ...p, starred: updated.starred } : p));
     }
-    loadStats(); // refresh sidebar count
+    loadStats();
   }
 
-  // When ingest finishes, refresh photos + stats
   function handleScanComplete() {
     setPhotos([]);
     setNextCursor(undefined);
@@ -174,7 +188,15 @@ export default function App() {
     loadStats();
   }
 
+  function changeView(v) {
+    setView(v);
+    clearSelection();
+    setMoreOpen(false);
+    if (isMobile) setSidebarOpen(false);
+  }
+
   const hasFilter = filters.q || filters.from || filters.to || filters.tagId || filters.collectionId || filters.starred || filters.city || filters.importedFrom;
+  const hasSidebar = view === 'library' || view === 'videos';
 
   return (
     <>
@@ -182,43 +204,68 @@ export default function App() {
       <header style={{
         position: 'sticky', top: 0, zIndex: 100,
         background: '#0f0f0f', borderBottom: '1px solid #1c1c1c',
-        height: 52, padding: '0 20px',
+        height: 52, padding: '0 12px',
         display: 'flex', alignItems: 'center', gap: 0,
       }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginRight: 20, letterSpacing: -0.3 }}>
+        <span style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginRight: isMobile ? 'auto' : 20, letterSpacing: -0.3 }}>
           Luma
         </span>
 
-        <nav style={{ display: 'flex', gap: 2 }}>
-          <Tab active={view === 'library'}    onClick={() => { setView('library'); clearSelection(); }}>
-            Library
-            {total !== null && (
-              <span style={{ marginLeft: 6, fontSize: 12, color: view === 'library' ? '#777' : '#666' }}>
-                {total.toLocaleString()}
-              </span>
-            )}
-          </Tab>
-          <Tab active={view === 'albums'}     onClick={() => { setView('albums'); clearSelection(); }}>Albums</Tab>
-          <Tab active={view === 'videos'}     onClick={() => { setView('videos'); clearSelection(); }}>Videos</Tab>
-          <Tab active={view === 'memories'}   onClick={() => { setView('memories'); clearSelection(); }}>Memories</Tab>
-          <Tab active={view === 'map'}        onClick={() => { setView('map'); clearSelection(); }}>Map</Tab>
-          <Tab active={view === 'duplicates'} onClick={() => { setView('duplicates'); clearSelection(); }}>
-            Duplicates
-            {dupeCount > 0 && (
-              <span style={{
-                marginLeft: 6, background: '#b8860b', color: '#fff',
-                borderRadius: 10, fontSize: 10, fontWeight: 700,
-                padding: '1px 6px', lineHeight: '16px',
-              }}>
-                {dupeCount}
-              </span>
-            )}
-          </Tab>
-          <Tab active={view === 'trash'} onClick={() => { setView('trash'); clearSelection(); }}>Trash</Tab>
-        </nav>
+        {/* Desktop nav tabs */}
+        {!isMobile && (
+          <nav style={{ display: 'flex', gap: 2 }}>
+            <Tab active={view === 'library'}    onClick={() => changeView('library')}>
+              Library
+              {total !== null && (
+                <span style={{ marginLeft: 6, fontSize: 12, color: view === 'library' ? '#777' : '#666' }}>
+                  {total.toLocaleString()}
+                </span>
+              )}
+            </Tab>
+            <Tab active={view === 'albums'}     onClick={() => changeView('albums')}>Albums</Tab>
+            <Tab active={view === 'videos'}     onClick={() => changeView('videos')}>Videos</Tab>
+            <Tab active={view === 'memories'}   onClick={() => changeView('memories')}>Memories</Tab>
+            <Tab active={view === 'map'}        onClick={() => changeView('map')}>Map</Tab>
+            <Tab active={view === 'duplicates'} onClick={() => changeView('duplicates')}>
+              Duplicates
+              {dupeCount > 0 && (
+                <span style={{
+                  marginLeft: 6, background: '#b8860b', color: '#fff',
+                  borderRadius: 10, fontSize: 10, fontWeight: 700,
+                  padding: '1px 6px', lineHeight: '16px',
+                }}>
+                  {dupeCount}
+                </span>
+              )}
+            </Tab>
+            <Tab active={view === 'trash'} onClick={() => changeView('trash')}>Trash</Tab>
+          </nav>
+        )}
+
+        {/* Mobile: filter button (sidebar toggle) */}
+        {isMobile && hasSidebar && (
+          <button
+            onClick={() => setSidebarOpen(s => !s)}
+            title="Filters"
+            style={{
+              background: sidebarOpen ? '#1e2a3a' : 'transparent',
+              border: 'none', borderRadius: 6,
+              color: sidebarOpen ? '#7ab8f5' : '#888',
+              cursor: 'pointer', fontSize: 18,
+              width: 38, height: 38,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              marginRight: 4,
+            }}
+          >
+            ⊟
+          </button>
+        )}
 
         {/* Right side: ingest badge + gear */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+          ...(isMobile ? {} : { flex: 1 }),
+        }}>
           <IngestBadge onScanComplete={handleScanComplete} />
           <button
             onClick={() => setShowSettings(s => !s)}
@@ -240,18 +287,34 @@ export default function App() {
       {/* ── Body (sidebar + content) ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
 
-        {/* Sidebar — library and videos views */}
-        {(view === 'library' || view === 'videos') && (
+        {/* Mobile sidebar backdrop */}
+        {isMobile && sidebarOpen && (
+          <div
+            onClick={() => setSidebarOpen(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200 }}
+          />
+        )}
+
+        {/* Sidebar */}
+        {hasSidebar && (
           <aside style={{
-            position: 'sticky', top: 52,
-            width: SIDEBAR_W, flexShrink: 0,
-            height: 'calc(100vh - 52px)', overflowY: 'auto',
-            borderRight: '1px solid #141414', background: '#0a0a0a',
+            position: isMobile ? 'fixed' : 'sticky',
+            top: isMobile ? 0 : 52,
+            left: 0,
+            width: isMobile ? 280 : SIDEBAR_W,
+            height: isMobile ? '100dvh' : 'calc(100vh - 52px)',
+            flexShrink: 0,
+            overflowY: 'auto',
+            borderRight: '1px solid #141414',
+            background: '#0a0a0a',
+            zIndex: isMobile ? 201 : undefined,
+            transform: isMobile ? (sidebarOpen ? 'translateX(0)' : 'translateX(-100%)') : undefined,
+            transition: isMobile ? 'transform 0.22s ease' : undefined,
           }}>
             {view === 'library' && (
               <FilterSidebar
                 filters={filters}
-                onChange={setFilters}
+                onChange={f => { setFilters(f); if (isMobile) setSidebarOpen(false); }}
                 stats={stats}
                 total={total}
               />
@@ -259,7 +322,7 @@ export default function App() {
             {view === 'videos' && (
               <FilterSidebar
                 filters={videoFilters}
-                onChange={setVideoFilters}
+                onChange={f => { setVideoFilters(f); if (isMobile) setSidebarOpen(false); }}
                 stats={videoStats}
                 total={videoStats?.total}
                 allLabel="All Videos"
@@ -269,9 +332,11 @@ export default function App() {
         )}
 
         {/* Main content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          flex: 1, minWidth: 0,
+          paddingBottom: isMobile ? 'calc(56px + env(safe-area-inset-bottom, 0px))' : 0,
+        }}>
 
-          {/* Library */}
           {view === 'library' && (
             <>
               {error && (
@@ -308,35 +373,30 @@ export default function App() {
             </>
           )}
 
-          {/* Albums */}
           {view === 'albums' && (
             <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
               <AlbumsView onSelectAlbum={handleSelectAlbum} />
             </Suspense>
           )}
 
-          {/* Videos */}
           {view === 'videos' && (
             <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
               <VideosView filters={videoFilters} />
             </Suspense>
           )}
 
-          {/* Memories */}
           {view === 'memories' && (
             <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
               <MemoriesView />
             </Suspense>
           )}
 
-          {/* Map */}
           {view === 'map' && (
             <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading map…</p>}>
               <MapView onOpenPhoto={(photo) => openLightbox([photo], 0)} />
             </Suspense>
           )}
 
-          {/* Duplicates */}
           {view === 'duplicates' && (
             <DuplicatesView
               onGroupCountChange={setDupeCount}
@@ -346,7 +406,6 @@ export default function App() {
             />
           )}
 
-          {/* Trash */}
           {view === 'trash' && (
             <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
               <TrashView />
@@ -355,19 +414,21 @@ export default function App() {
         </div>
       </div>
 
-      {/* Timeline scrubber — right-edge year nav for library */}
-      {view === 'library' && (
+      {/* Timeline scrubber — desktop only */}
+      {view === 'library' && !isMobile && (
         <TimelineScrubber years={stats?.years ?? []} />
       )}
 
       {/* Bulk action bar */}
       {selected.size > 0 && view === 'library' && (
         <div style={{
-          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          position: 'fixed', bottom: isMobile ? 'calc(56px + env(safe-area-inset-bottom, 8px) + 8px)' : 20,
+          left: '50%', transform: 'translateX(-50%)',
           background: '#1c1c1c', border: '1px solid #2e2e2e', borderRadius: 12,
           padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 10,
           boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
           zIndex: 500, whiteSpace: 'nowrap',
+          maxWidth: 'calc(100vw - 32px)', overflowX: 'auto',
         }}>
           <span style={{ fontSize: 13, color: '#ccc', fontWeight: 600 }}>
             {selected.size} selected
@@ -395,6 +456,18 @@ export default function App() {
         </div>
       )}
 
+      {/* Mobile bottom nav */}
+      {isMobile && (
+        <BottomNav
+          view={view}
+          onNavigate={changeView}
+          moreOpen={moreOpen}
+          setMoreOpen={setMoreOpen}
+          dupeCount={dupeCount}
+          total={total}
+        />
+      )}
+
       {/* Settings panel */}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
@@ -415,7 +488,7 @@ export default function App() {
 
 const bulkBtn = {
   background: 'transparent', border: '1px solid #333', borderRadius: 6,
-  color: '#ccc', cursor: 'pointer', fontSize: 12, padding: '5px 11px',
+  color: '#ccc', cursor: 'pointer', fontSize: 12, padding: '5px 11px', flexShrink: 0,
 };
 
 function Tab({ active, onClick, children }) {
@@ -433,5 +506,114 @@ function Tab({ active, onClick, children }) {
     >
       {children}
     </button>
+  );
+}
+
+const BOTTOM_TABS = [
+  { id: 'library',   icon: '⊞', label: 'Library' },
+  { id: 'albums',    icon: '◫', label: 'Albums' },
+  { id: 'memories',  icon: '✦', label: 'Memories' },
+  { id: 'map',       icon: '◉', label: 'Map' },
+];
+
+const MORE_ITEMS = [
+  { id: 'videos',     label: 'Videos' },
+  { id: 'duplicates', label: 'Duplicates' },
+  { id: 'trash',      label: 'Trash' },
+];
+
+function BottomNav({ view, onNavigate, moreOpen, setMoreOpen, dupeCount, total }) {
+  const isMore = MORE_ITEMS.some(t => t.id === view);
+
+  return (
+    <>
+      {/* Backdrop closes the "more" popup */}
+      {moreOpen && (
+        <div
+          onClick={() => setMoreOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 298 }}
+        />
+      )}
+
+      <nav style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 300,
+        background: '#101010', borderTop: '1px solid #1e1e1e',
+        display: 'flex', alignItems: 'stretch',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}>
+        {BOTTOM_TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => onNavigate(tab.id)}
+            style={{
+              flex: 1, background: 'transparent', border: 'none',
+              color: view === tab.id ? '#4d9eff' : '#555',
+              cursor: 'pointer', padding: '8px 4px 6px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+              fontSize: 10, fontWeight: view === tab.id ? 600 : 400,
+              position: 'relative',
+            }}
+          >
+            <span style={{ fontSize: 20, lineHeight: 1 }}>{tab.icon}</span>
+            {tab.id === 'library' && total !== null
+              ? `Library (${total.toLocaleString()})`
+              : tab.label
+            }
+          </button>
+        ))}
+
+        {/* More */}
+        <div style={{ flex: 1, position: 'relative' }}>
+          <button
+            onClick={() => setMoreOpen(s => !s)}
+            style={{
+              width: '100%', height: '100%', background: 'transparent', border: 'none',
+              color: isMore ? '#4d9eff' : '#555',
+              cursor: 'pointer', padding: '8px 4px 6px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+              fontSize: 10, fontWeight: isMore ? 600 : 400,
+            }}
+          >
+            <span style={{ fontSize: 20, lineHeight: 1, letterSpacing: -1 }}>···</span>
+            {isMore ? (view.charAt(0).toUpperCase() + view.slice(1)) : 'More'}
+          </button>
+
+          {moreOpen && (
+            <div style={{
+              position: 'absolute', bottom: 'calc(100% + 6px)', right: 6,
+              background: '#1c1c1c', border: '1px solid #2e2e2e',
+              borderRadius: 10, overflow: 'hidden', minWidth: 150,
+              boxShadow: '0 -4px 24px rgba(0,0,0,0.7)',
+              zIndex: 299,
+            }}>
+              {MORE_ITEMS.map((item, i) => (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    width: '100%', textAlign: 'left',
+                    background: view === item.id ? '#222' : 'transparent',
+                    border: 'none',
+                    borderBottom: i < MORE_ITEMS.length - 1 ? '1px solid #242424' : 'none',
+                    color: view === item.id ? '#4d9eff' : '#ccc',
+                    cursor: 'pointer', padding: '13px 16px', fontSize: 14,
+                  }}
+                >
+                  {item.label}
+                  {item.id === 'duplicates' && dupeCount > 0 && (
+                    <span style={{
+                      background: '#b8860b', color: '#fff',
+                      borderRadius: 10, fontSize: 10, fontWeight: 700,
+                      padding: '1px 6px',
+                    }}>{dupeCount}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </nav>
+    </>
   );
 }
