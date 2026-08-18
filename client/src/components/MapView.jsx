@@ -47,11 +47,11 @@ export default function MapView({ onOpenPhoto }) {
   );
 
   if (points === null) return (
-    <p style={{ color: '#555', padding: 24, fontSize: 13 }}>Loading map…</p>
+    <p style={{ color: '#777', padding: 24, fontSize: 13 }}>Loading map…</p>
   );
 
   if (points.length === 0) return (
-    <div style={{ textAlign: 'center', paddingTop: 60, color: '#555' }}>
+    <div style={{ textAlign: 'center', paddingTop: 60, color: '#777' }}>
       <p style={{ fontSize: 15, marginBottom: 8 }}>No geotagged photos.</p>
       <p style={{ fontSize: 13 }}>Photos with GPS metadata will appear here once indexed.</p>
     </div>

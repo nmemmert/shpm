@@ -13,7 +13,7 @@ export default function MonthGroup({ label, photos, startIdx, onSelect }) {
         userSelect: 'none',
       }}>
         {label}
-        <span style={{ marginLeft: 8, color: '#3a3a3a', fontWeight: 400 }}>
+        <span style={{ marginLeft: 8, color: '#666', fontWeight: 400 }}>
           {photos.length.toLocaleString()}
         </span>
       </h2>

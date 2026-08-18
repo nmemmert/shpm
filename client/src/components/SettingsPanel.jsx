@@ -190,7 +190,7 @@ export default function SettingsPanel({ onClose }) {
                     onClick={() => handleRemoveFolder(f.id)}
                     style={{
                       background: 'none', border: 'none',
-                      color: '#3a3a3a', cursor: 'pointer', fontSize: 14,
+                      color: '#666', cursor: 'pointer', fontSize: 14,
                       flexShrink: 0, lineHeight: 1,
                     }}
                   >×</button>
@@ -333,7 +333,7 @@ export default function SettingsPanel({ onClose }) {
               <NumSetting label="Preview quality" unit="%" min={1} max={100}
                 value={settings.preview_quality}
                 onChange={v => handleSetting('preview_quality', v)} />
-              <p style={{ fontSize: 11, color: '#3a3a3a', padding: '4px 18px 0', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: '#666', padding: '4px 18px 0', lineHeight: 1.5 }}>
                 Changes apply to newly ingested photos. Existing thumbnails are not regenerated.
               </p>
             </Section>
@@ -343,7 +343,7 @@ export default function SettingsPanel({ onClose }) {
               <NumSetting label="Similarity threshold" unit="" min={1} max={20}
                 value={settings.dedupe_threshold}
                 onChange={v => handleSetting('dedupe_threshold', v)} />
-              <p style={{ fontSize: 11, color: '#3a3a3a', padding: '4px 18px 0', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: '#666', padding: '4px 18px 0', lineHeight: 1.5 }}>
                 Hamming distance — lower = stricter (fewer, more exact matches).
               </p>
             </Section>
@@ -390,7 +390,7 @@ export default function SettingsPanel({ onClose }) {
                     error={syncError.icloud}
                     onSync={() => handleSync('icloud')}
                   />
-                  <p style={{ fontSize: 11, color: '#3a3a3a', padding: '2px 18px 4px', lineHeight: 1.5 }}>
+                  <p style={{ fontSize: 11, color: '#666', padding: '2px 18px 4px', lineHeight: 1.5 }}>
                     First run: <code style={{ color: '#555' }}>docker exec &lt;container&gt; icloudpd --username &lt;id&gt; --auth-only --cookie-directory /data/icloud-cookies</code>
                   </p>
                 </>
@@ -398,7 +398,7 @@ export default function SettingsPanel({ onClose }) {
 
               {/* Amazon Photos */}
               <SyncSourceHeader label="Amazon Photos — one-time import" />
-              <p style={{ fontSize: 11, color: '#3a3a3a', padding: '0 18px 8px', lineHeight: 1.6 }}>
+              <p style={{ fontSize: 11, color: '#666', padding: '0 18px 8px', lineHeight: 1.6 }}>
                 Request your library at amazon.com → Account → Request Your Data → Amazon Photos.
                 Extract the ZIP, copy to your server, then add the folder path here.
               </p>
@@ -430,7 +430,7 @@ export default function SettingsPanel({ onClose }) {
                 </button>
               </div>
 
-              <p style={{ fontSize: 11, color: '#3a3a3a', padding: '4px 18px 0', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: '#666', padding: '4px 18px 0', lineHeight: 1.5 }}>
                 Also add the iCloud download folder to Watch Folders once sync runs.
               </p>
             </Section>
@@ -441,7 +441,7 @@ export default function SettingsPanel({ onClose }) {
                 <DangerBtn onClick={handleClearDismissals}>
                   {cleared ? '✓ Done' : 'Clear dismissed duplicates'}
                 </DangerBtn>
-                <p style={{ fontSize: 11, color: '#3a3a3a', marginTop: 5, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 11, color: '#666', marginTop: 5, lineHeight: 1.5 }}>
                   Resets all "Not duplicates" decisions so groups reappear in the review list.
                 </p>
               </div>
@@ -459,7 +459,7 @@ function Section({ title, children }) {
     <div style={{ marginTop: 20 }}>
       <div style={{
         fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-        color: '#3a3a3a', textTransform: 'uppercase',
+        color: '#666', textTransform: 'uppercase',
         padding: '0 18px 8px',
       }}>
         {title}
@@ -610,7 +610,7 @@ function SyncControls({ job, error, onSync }) {
         )}
 
         {lastRunLabel && !job.running && (
-          <span style={{ fontSize: 11, color: '#3a3a3a' }}>
+          <span style={{ fontSize: 11, color: '#666' }}>
             Last: {lastRunLabel}
             {job.exitCode !== null && (
               <span style={{ color: job.exitCode === 0 ? '#4a7a4a' : '#7a3a3a', marginLeft: 6 }}>
@@ -624,7 +624,7 @@ function SyncControls({ job, error, onSync }) {
           <button
             onClick={() => setShowLog(s => !s)}
             style={{
-              background: 'none', border: 'none', color: '#3a3a3a',
+              background: 'none', border: 'none', color: '#666',
               cursor: 'pointer', fontSize: 11, marginLeft: 'auto', padding: 0,
             }}
           >

@@ -120,7 +120,7 @@ export default function App() {
           <Tab active={view === 'library'}    onClick={() => setView('library')}>
             Library
             {total !== null && (
-              <span style={{ marginLeft: 6, fontSize: 12, color: view === 'library' ? '#555' : '#3a3a3a' }}>
+              <span style={{ marginLeft: 6, fontSize: 12, color: view === 'library' ? '#777' : '#666' }}>
                 {total.toLocaleString()}
               </span>
             )}
@@ -192,7 +192,7 @@ export default function App() {
                 </p>
               )}
               {photos.length === 0 && !loading && !error && (
-                <div style={{ textAlign: 'center', padding: '80px 24px', color: '#555' }}>
+                <div style={{ textAlign: 'center', padding: '80px 24px', color: '#777' }}>
                   {hasFilter ? (
                     <p style={{ fontSize: 15 }}>No photos match these filters.</p>
                   ) : (
@@ -207,7 +207,7 @@ export default function App() {
               <div ref={sentinelRef} style={{ height: 1 }} />
               {loading && <p style={{ textAlign: 'center', padding: 24, color: '#444', fontSize: 13 }}>Loading…</p>}
               {nextCursor === null && photos.length > 0 && !loading && (
-                <p style={{ textAlign: 'center', padding: 24, color: '#2a2a2a', fontSize: 12 }}>
+                <p style={{ textAlign: 'center', padding: 24, color: '#555', fontSize: 12 }}>
                   — {total?.toLocaleString()} photo{total === 1 ? '' : 's'} —
                 </p>
               )}
@@ -216,7 +216,7 @@ export default function App() {
 
           {/* Map */}
           {view === 'map' && (
-            <Suspense fallback={<p style={{ padding: 24, color: '#555', fontSize: 13 }}>Loading map…</p>}>
+            <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading map…</p>}>
               <MapView onOpenPhoto={(photo) => openLightbox([photo], 0)} />
             </Suspense>
           )}

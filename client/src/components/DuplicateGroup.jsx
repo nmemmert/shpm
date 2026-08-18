@@ -56,13 +56,13 @@ export default function DuplicateGroup({ photos, onDismiss, onOpen }) {
             </div>
 
             {/* Meta */}
-            <div style={{ padding: '7px 10px 8px', fontSize: 12, color: '#555', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div style={{ padding: '7px 10px 8px', fontSize: 12, color: '#777', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ color: '#888' }}>{fmtDate(photo.date_taken)}</span>
               <span>
                 {[fmtSize(photo.filesize), photo.width && `${photo.width}×${photo.height}`].filter(Boolean).join(' · ')}
               </span>
               {photo.camera_model && (
-                <span style={{ color: '#3a3a3a', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#666', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {photo.camera_model}
                 </span>
               )}
@@ -77,7 +77,7 @@ export default function DuplicateGroup({ photos, onDismiss, onOpen }) {
         borderTop: '1px solid #1a1a1a',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
-        <span style={{ fontSize: 12, color: '#333', flex: 1 }}>
+        <span style={{ fontSize: 12, color: '#666', flex: 1 }}>
           {photos.length} similar photos
         </span>
         <button

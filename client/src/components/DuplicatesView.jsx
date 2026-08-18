@@ -66,7 +66,7 @@ export default function DuplicatesView({ onOpenPhoto, onGroupCountChange }) {
         </button>
 
         {scanResult && (
-          <span style={{ fontSize: 12, color: '#555' }}>
+          <span style={{ fontSize: 12, color: '#777' }}>
             {scanResult.newPairs === 0
               ? 'No new pairs'
               : `${scanResult.newPairs} new pair${scanResult.newPairs !== 1 ? 's' : ''} found`}
@@ -80,11 +80,11 @@ export default function DuplicatesView({ onOpenPhoto, onGroupCountChange }) {
       )}
 
       {groups === null && (
-        <p style={{ color: '#555', fontSize: 13 }}>Loading…</p>
+        <p style={{ color: '#777', fontSize: 13 }}>Loading…</p>
       )}
 
       {groups !== null && groups.length === 0 && (
-        <div style={{ textAlign: 'center', paddingTop: 60, color: '#555' }}>
+        <div style={{ textAlign: 'center', paddingTop: 60, color: '#777' }}>
           <p style={{ fontSize: 15, marginBottom: 8 }}>No similar photos to review.</p>
           <p style={{ fontSize: 13 }}>Click "Scan library" to compare perceptual hashes across your library.</p>
         </div>
@@ -92,7 +92,7 @@ export default function DuplicatesView({ onOpenPhoto, onGroupCountChange }) {
 
       {groups !== null && groups.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <p style={{ fontSize: 12, color: '#444', marginBottom: 4 }}>
+          <p style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
             {groups.length} group{groups.length !== 1 ? 's' : ''} — click a photo to inspect it, "Not duplicates" to dismiss
           </p>
           {groups.map((group, i) => (

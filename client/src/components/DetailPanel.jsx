@@ -77,7 +77,7 @@ export default function DetailPanel({ photoId }) {
 function Section({ label, children }) {
   return (
     <div style={{ marginBottom: 24 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#3a3a3a', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
         {label}
       </div>
       {children}
@@ -88,7 +88,7 @@ function Section({ label, children }) {
 function Row({ k, v, mono }) {
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 5 }}>
-      <span style={{ color: '#555', flexShrink: 0, width: 60, fontSize: 12 }}>{k}</span>
+      <span style={{ color: '#777', flexShrink: 0, width: 60, fontSize: 12 }}>{k}</span>
       <span style={{
         color: '#aaa',
         fontFamily: mono ? "'SF Mono', 'Fira Code', monospace" : undefined,

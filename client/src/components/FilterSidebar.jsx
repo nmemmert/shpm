@@ -156,7 +156,7 @@ function Section({ title, children }) {
     <div style={{ marginTop: 16 }}>
       <div style={{
         fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-        color: '#3a3a3a', textTransform: 'uppercase',
+        color: '#666', textTransform: 'uppercase',
         padding: '0 16px 4px',
       }}>
         {title}
