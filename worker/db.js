@@ -120,7 +120,9 @@ export function openDb(dbPath) {
   try { db.exec('ALTER TABLE photos ADD COLUMN shutter_speed TEXT'); } catch {}
   try { db.exec('ALTER TABLE photos ADD COLUMN focal_length REAL'); } catch {}
   try { db.exec('ALTER TABLE photos ADD COLUMN lens_model TEXT'); } catch {}
+  try { db.exec('ALTER TABLE photos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0'); } catch {}
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_starred     ON photos(starred)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_deleted     ON photos(deleted)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_place_city  ON photos(place_city)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_photos_media_type  ON photos(media_type)');
 

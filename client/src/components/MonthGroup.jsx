@@ -1,8 +1,8 @@
 import PhotoCard from './PhotoCard.jsx';
 
-export default function MonthGroup({ label, photos, startIdx, onSelect, selected, onToggle, selectionActive }) {
+export default function MonthGroup({ label, photos, startIdx, onSelect, selected, onToggle, selectionActive, yearId }) {
   return (
-    <section style={{ marginBottom: 8 }}>
+    <section id={yearId} style={{ marginBottom: 8 }}>
       <h2 style={{
         padding: '18px 6px 8px',
         fontSize: 13,

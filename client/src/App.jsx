@@ -1,19 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchPhotos, fetchLibraryStats, fetchVideoStats, bulkStar, bulkAddToCollection } from './api/photos.js';
+import { fetchPhotos, fetchLibraryStats, fetchVideoStats, bulkStar, bulkAddToCollection, deletePhoto } from './api/photos.js';
 import Timeline from './components/Timeline.jsx';
 import Lightbox from './components/Lightbox.jsx';
 import FilterSidebar from './components/FilterSidebar.jsx';
 import IngestBadge from './components/IngestBadge.jsx';
 import DuplicatesView from './components/DuplicatesView.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
+import TimelineScrubber from './components/TimelineScrubber.jsx';
 
 import { lazy, Suspense } from 'react';
 const MapView      = lazy(() => import('./components/MapView.jsx'));
 const MemoriesView = lazy(() => import('./components/MemoriesView.jsx'));
 const VideosView   = lazy(() => import('./components/VideosView.jsx'));
 const AlbumsView   = lazy(() => import('./components/AlbumsView.jsx'));
+const TrashView    = lazy(() => import('./components/TrashView.jsx'));
 
-const EMPTY_FILTERS       = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
+const EMPTY_FILTERS       = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '', importedFrom: '' };
 const EMPTY_VIDEO_FILTERS = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
 const SIDEBAR_W = 210;
 
@@ -121,15 +123,33 @@ export default function App() {
     } catch {}
   }
 
-  function handleSelectAlbum({ type, collectionId, year, city, camera }) {
-    const f = { q: '', from: '', to: '', tagId: '', collectionId: '', starred: '', city: '' };
+  function handleSelectAlbum({ type, collectionId, year, city, camera, days }) {
+    const f = { ...EMPTY_FILTERS };
     if (type === 'collection') f.collectionId = String(collectionId);
-    else if (type === 'year')  { f.from = `${year}-01-01`; f.to = `${year}-12-31`; }
-    else if (type === 'city')  f.city = city;
+    else if (type === 'year')   { f.from = `${year}-01-01`; f.to = `${year}-12-31`; }
+    else if (type === 'city')   f.city = city;
     else if (type === 'camera') f.q = camera;
+    else if (type === 'recent') {
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      f.importedFrom = d.toISOString().slice(0, 10);
+    }
     setFilters(f);
     setView('library');
     clearSelection();
+  }
+
+  async function handleDeletePhoto(photoId) {
+    try {
+      await deletePhoto(photoId);
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+      if (lbPhotos) {
+        const next = lbPhotos.filter(p => p.id !== photoId);
+        if (next.length === 0) { setLbPhotos(null); setLbIndex(null); }
+        else { setLbPhotos(next); setLbIndex(i => Math.min(i, next.length - 1)); }
+      }
+      loadStats();
+    } catch {}
   }
 
   function openLightbox(photosArr, idx) {
@@ -154,7 +174,7 @@ export default function App() {
     loadStats();
   }
 
-  const hasFilter = filters.q || filters.from || filters.to || filters.tagId || filters.collectionId || filters.starred || filters.city;
+  const hasFilter = filters.q || filters.from || filters.to || filters.tagId || filters.collectionId || filters.starred || filters.city || filters.importedFrom;
 
   return (
     <>
@@ -194,6 +214,7 @@ export default function App() {
               </span>
             )}
           </Tab>
+          <Tab active={view === 'trash'} onClick={() => { setView('trash'); clearSelection(); }}>Trash</Tab>
         </nav>
 
         {/* Right side: ingest badge + gear */}
@@ -324,8 +345,20 @@ export default function App() {
               }
             />
           )}
+
+          {/* Trash */}
+          {view === 'trash' && (
+            <Suspense fallback={<p style={{ padding: 24, color: '#777', fontSize: 13 }}>Loading…</p>}>
+              <TrashView />
+            </Suspense>
+          )}
         </div>
       </div>
+
+      {/* Timeline scrubber — right-edge year nav for library */}
+      {view === 'library' && (
+        <TimelineScrubber years={stats?.years ?? []} />
+      )}
 
       {/* Bulk action bar */}
       {selected.size > 0 && view === 'library' && (
@@ -373,6 +406,7 @@ export default function App() {
           onClose={() => { setLbPhotos(null); setLbIndex(null); }}
           onChange={setLbIndex}
           onStarChange={handleStarChange}
+          onDelete={handleDeletePhoto}
         />
       )}
     </>

@@ -10,7 +10,7 @@ const json = (body) => ({
 });
 
 // Library
-export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectionId, starred, city } = {}) {
+export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectionId, starred, city, importedFrom } = {}) {
   const p = new URLSearchParams({ limit });
   if (cursor)       p.set('cursor',       cursor);
   if (q)            p.set('q',            q);
@@ -20,6 +20,7 @@ export function fetchPhotos({ cursor, limit = 100, q, from, to, tagId, collectio
   if (collectionId) p.set('collectionId', collectionId);
   if (starred)      p.set('starred',      starred);
   if (city)         p.set('city',         city);
+  if (importedFrom) p.set('importedFrom', importedFrom);
   return api(`/api/photos?${p}`);
 }
 
@@ -141,6 +142,23 @@ export function renameCollection(id, name) {
 
 export function deleteCollection(id) {
   return api(`/api/collections/${id}`, { method: 'DELETE' });
+}
+
+// Trash / delete
+export function deletePhoto(id) {
+  return api(`/api/photos/${id}`, { method: 'DELETE' });
+}
+
+export function restorePhoto(id) {
+  return api(`/api/photos/${id}/restore`, { method: 'POST' });
+}
+
+export function permanentDeletePhoto(id) {
+  return api(`/api/photos/${id}/permanent`, { method: 'DELETE' });
+}
+
+export function fetchTrash() {
+  return api('/api/trash');
 }
 
 // Bulk operations

@@ -98,6 +98,23 @@ export default function AlbumsView({ onSelectAlbum }) {
             </p>
           </div>
 
+          {auto.recent?.length > 0 && (
+            <>
+              <SubHeader>Recently Added</SubHeader>
+              <AlbumGrid>
+                {auto.recent.map(r => (
+                  <AlbumCard
+                    key={r.days}
+                    cover={r.cover_url}
+                    title={r.label}
+                    count={r.count}
+                    onClick={() => onSelectAlbum({ type: 'recent', days: r.days, name: r.label })}
+                  />
+                ))}
+              </AlbumGrid>
+            </>
+          )}
+
           {auto.years.length > 0 && (
             <>
               <SubHeader>Years</SubHeader>

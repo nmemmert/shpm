@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { toggleStar } from '../api/photos.js';
 import DetailPanel from './DetailPanel.jsx';
 
-export default function Lightbox({ photos, index, onClose, onChange, onStarChange }) {
+export default function Lightbox({ photos, index, onClose, onChange, onStarChange, onDelete }) {
   const [showInfo, setShowInfo]   = useState(false);
   const [starring, setStarring]   = useState(false);
   const photo = photos[index];
@@ -72,6 +72,17 @@ export default function Lightbox({ photos, index, onClose, onChange, onStarChang
           >
             ↓
           </a>
+          {onDelete && (
+            <IconBtn
+              onClick={() => {
+                if (confirm('Move this photo to Trash?')) onDelete(photo.id);
+              }}
+              title="Move to Trash"
+              style={{ color: '#f87171' }}
+            >
+              🗑
+            </IconBtn>
+          )}
           <IconBtn
             onClick={() => setShowInfo(s => !s)}
             active={showInfo}
@@ -123,7 +134,7 @@ export default function Lightbox({ photos, index, onClose, onChange, onStarChang
   );
 }
 
-function IconBtn({ onClick, active, title, children }) {
+function IconBtn({ onClick, active, title, style: extraStyle, children }) {
   return (
     <button
       onClick={onClick}
@@ -138,6 +149,7 @@ function IconBtn({ onClick, active, title, children }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 14,
         transition: 'background 0.1s',
+        ...extraStyle,
       }}
     >
       {children}

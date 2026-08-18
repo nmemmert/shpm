@@ -27,12 +27,16 @@ export default function Timeline({ photos, onSelect, selected, onToggle, selecti
 
   const groups = groupByMonth(photos);
   let globalIdx = 0;
+  const seenYears = new Set();
 
   return (
     <main style={{ padding: '0 3px' }}>
       {groups.map(group => {
         const startIdx = globalIdx;
         globalIdx += group.photos.length;
+        const year = group.key.slice(0, 4);
+        const isFirstOfYear = !seenYears.has(year);
+        if (isFirstOfYear) seenYears.add(year);
         return (
           <MonthGroup
             key={group.key}
@@ -43,6 +47,7 @@ export default function Timeline({ photos, onSelect, selected, onToggle, selecti
             selected={selected}
             onToggle={onToggle}
             selectionActive={selectionActive}
+            yearId={isFirstOfYear ? `year-${year}` : undefined}
           />
         );
       })}
