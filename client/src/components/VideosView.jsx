@@ -44,10 +44,13 @@ function fmtSize(b) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+const SHORT_THRESHOLD = 2; // seconds
+
 export default function VideosView({ filters = {} }) {
-  const [videos,  setVideos]  = useState(null);
-  const [playing, setPlaying] = useState(null);
-  const [error,   setError]   = useState(null);
+  const [videos,     setVideos]     = useState(null);
+  const [playing,    setPlaying]    = useState(null);
+  const [error,      setError]      = useState(null);
+  const [showShort,  setShowShort]  = useState(false);
 
   useEffect(() => {
     setVideos(null);
@@ -77,10 +80,36 @@ export default function VideosView({ filters = {} }) {
     );
   }
 
-  const groups = groupByMonth(videos);
+  const shortCount  = videos.filter(v => v.duration != null && v.duration <= SHORT_THRESHOLD).length;
+  const visible     = showShort ? videos : videos.filter(v => v.duration == null || v.duration > SHORT_THRESHOLD);
+  const groups      = groupByMonth(visible).filter(g => g.videos.length > 0);
 
   return (
     <>
+      {/* Toolbar */}
+      {shortCount > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '10px 12px 2px',
+        }}>
+          <button
+            onClick={() => setShowShort(s => !s)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: showShort ? '#1e2a3a' : 'transparent',
+              border: `1px solid ${showShort ? '#4d9eff' : '#2a2a2a'}`,
+              borderRadius: 6, color: showShort ? '#9fc8ff' : '#555',
+              fontSize: 12, padding: '4px 10px', cursor: 'pointer',
+            }}
+          >
+            {showShort ? '▾' : '▸'}
+            {showShort
+              ? `Hiding ${shortCount} short clip${shortCount === 1 ? '' : 's'}`
+              : `${shortCount} short clip${shortCount === 1 ? '' : 's'} hidden`}
+          </button>
+        </div>
+      )}
+
       <main style={{ padding: '0 3px' }}>
         {groups.map(group => (
           <section key={group.key} style={{ marginBottom: 8 }}>
