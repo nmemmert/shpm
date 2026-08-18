@@ -37,7 +37,6 @@ export function openDb(dbPath) {
 
     CREATE INDEX IF NOT EXISTS idx_photos_date_taken ON photos(date_taken);
     CREATE INDEX IF NOT EXISTS idx_photos_phash      ON photos(phash);
-    CREATE INDEX IF NOT EXISTS idx_photos_starred    ON photos(starred);
 
     CREATE TABLE IF NOT EXISTS collections (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,8 +94,9 @@ export function openDb(dbPath) {
     );
   `);
 
-  // Column migrations
+  // Column migrations — run before any indexes that depend on the new column
   try { db.exec('ALTER TABLE photos ADD COLUMN starred INTEGER NOT NULL DEFAULT 0'); } catch {}
+  db.exec('CREATE INDEX IF NOT EXISTS idx_photos_starred ON photos(starred)');
 
   // Seed default settings
   const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
