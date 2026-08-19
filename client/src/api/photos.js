@@ -183,3 +183,7 @@ export function scanDuplicates() {
 export function dismissGroup(photoIds) {
   return api('/api/duplicates/dismiss', { method: 'POST', ...json({ photoIds }) });
 }
+
+export function keepBestDuplicate(photoIds) {
+  return api('/api/duplicates/keep-best', { method: 'POST', ...json({ photoIds }) });
+}

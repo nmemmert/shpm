@@ -5,7 +5,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { openDb } from '../worker/db.js';
-import { scan, getGroups } from './dedupe.js';
+import { scan, getGroups, keepBest } from './dedupe.js';
 import { scanMusicLibrary, initMusicTable, musicScanActive } from '../worker/scanMusic.js';
 
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
@@ -561,10 +561,10 @@ app.delete('/api/photos/:id/collections/:colId', (req, res) => {
 
 // ── Duplicates ────────────────────────────────────────────────────────────────
 
-app.post('/api/dedupe/scan', (_req, res) => {
+app.post('/api/dedupe/scan', async (_req, res) => {
   try {
     const { dedupe_threshold } = db.getSettings();
-    res.json(scan(db, dedupe_threshold));
+    res.json(await scan(db, dedupe_threshold));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -590,6 +590,16 @@ app.post('/api/duplicates/dismiss', (req, res) => {
   if (!Array.isArray(ids) || ids.length < 2) return badRequest(res, 'photoIds must be array of ≥2');
   db.dismissDuplicates(ids.map(Number));
   res.sendStatus(204);
+});
+
+app.post('/api/duplicates/keep-best', (req, res) => {
+  try {
+    const ids = req.body.photoIds;
+    if (!Array.isArray(ids) || ids.length < 2) return badRequest(res, 'photoIds must be array of ≥2');
+    const result = keepBest(db, ids);
+    cache.invalidate();
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Photo Sync ────────────────────────────────────────────────────────────────

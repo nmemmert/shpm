@@ -20,12 +20,17 @@ export async function computeDHash(filepath) {
   return hash.toString(16).padStart(16, '0');
 }
 
+function popcount32(n) {
+  n = n >>> 0;
+  n -= (n >> 1) & 0x55555555;
+  n = (n & 0x33333333) + ((n >> 2) & 0x33333333);
+  n = (n + (n >> 4)) & 0x0f0f0f0f;
+  return Math.imul(n, 0x01010101) >>> 24;
+}
+
 export function hammingDistance(a, b) {
-  let xor = BigInt('0x' + a) ^ BigInt('0x' + b);
-  let dist = 0;
-  while (xor > 0n) {
-    dist += Number(xor & 1n);
-    xor >>= 1n;
-  }
-  return dist;
+  if (!a || !b || a.length !== 16 || b.length !== 16) return 64;
+  const xorHi = (parseInt(a.slice(0, 8), 16) ^ parseInt(b.slice(0, 8), 16)) >>> 0;
+  const xorLo = (parseInt(a.slice(8),    16) ^ parseInt(b.slice(8),    16)) >>> 0;
+  return popcount32(xorHi) + popcount32(xorLo);
 }

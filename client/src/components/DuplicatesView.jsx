@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchDuplicates, scanDuplicates, dismissGroup } from '../api/photos.js';
+import { fetchDuplicates, scanDuplicates, dismissGroup, keepBestDuplicate } from '../api/photos.js';
 import DuplicateGroup from './DuplicateGroup.jsx';
 
 export default function DuplicatesView({ onOpenPhoto, onGroupCountChange }) {
@@ -33,18 +33,31 @@ export default function DuplicatesView({ onOpenPhoto, onGroupCountChange }) {
     setScanning(false);
   }
 
+  function removeGroup(photoIds) {
+    setGroups(prev => {
+      const next = prev.filter(g => {
+        const s = new Set(g.map(p => p.id));
+        return !photoIds.every(id => s.has(id));
+      });
+      onGroupCountChange?.(next.length);
+      return next;
+    });
+  }
+
   async function handleDismiss(photoIds) {
     try {
       await dismissGroup(photoIds);
-      setGroups(prev => {
-        const next = prev.filter(g => {
-          const s = new Set(g.map(p => p.id));
-          return !photoIds.every(id => s.has(id));
-        });
-        onGroupCountChange?.(next.length);
-        return next;
-      });
+      removeGroup(photoIds);
     } catch {}
+  }
+
+  async function handleKeepBest(photoIds) {
+    try {
+      await keepBestDuplicate(photoIds);
+      removeGroup(photoIds);
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   return (
@@ -100,6 +113,7 @@ export default function DuplicatesView({ onOpenPhoto, onGroupCountChange }) {
               key={i}
               photos={group}
               onDismiss={() => handleDismiss(group.map(p => p.id))}
+              onKeepBest={() => handleKeepBest(group.map(p => p.id))}
               onOpen={(photo) => onOpenPhoto(photo, group)}
             />
           ))}
