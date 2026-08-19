@@ -5,8 +5,12 @@ import { hammingDistance } from '../worker/hash.js';
 const SCAN_CHUNK = 50;
 
 export async function scan(db, threshold) {
-  const THRESHOLD = threshold ?? parseInt(process.env.DEDUPE_THRESHOLD ?? '10', 10);
+  const THRESHOLD = threshold ?? parseInt(process.env.DEDUPE_THRESHOLD ?? '5', 10);
   const start = Date.now();
+
+  // Clear all existing pairs so the result exactly matches the current threshold.
+  // Dismissed pairs are also cleared — a fresh scan is a clean slate.
+  db.raw.prepare('DELETE FROM duplicate_pairs').run();
 
   const photos = db.raw.prepare(
     "SELECT id, phash FROM photos WHERE phash IS NOT NULL AND phash != '0000000000000000'"
@@ -57,34 +61,18 @@ export function getGroups(db) {
   const pairs = db.getDupePairs();
   if (!pairs.length) return [];
 
-  const parent = new Map();
-
-  function find(x) {
-    if (!parent.has(x)) parent.set(x, x);
-    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)));
-    return parent.get(x);
-  }
-
-  function union(a, b) { parent.set(find(a), find(b)); }
-
-  for (const { photo_id_a, photo_id_b } of pairs) union(photo_id_a, photo_id_b);
-  for (const id of [...parent.keys()]) find(id);
-
-  const groups = new Map();
-  for (const id of parent.keys()) {
-    const root = find(id);
-    if (!groups.has(root)) groups.set(root, []);
-    groups.get(root).push(id);
-  }
-
-  const allIds = [...parent.keys()];
+  const allIds = [...new Set(pairs.flatMap(p => [p.photo_id_a, p.photo_id_b]))];
   const rows   = fetchPhotosByIds(db, allIds);
   const photoMap = new Map(rows.map(r => [r.id, r]));
 
-  return [...groups.values()]
-    .filter(ids => ids.length >= 2)
-    .map(ids => ids.map(id => photoMap.get(id)).filter(Boolean))
-    .sort((a, b) => b.length - a.length);
+  // Return each pair as its own 2-photo group.
+  // Union-find chaining caused false "5000-photo" mega-groups through
+  // transitivity (A≈B and B≈C ≠ A≈C). Individual pairs are always accurate.
+  return pairs
+    .map(({ photo_id_a, photo_id_b }) =>
+      [photoMap.get(photo_id_a), photoMap.get(photo_id_b)].filter(Boolean)
+    )
+    .filter(g => g.length === 2);
 }
 
 export function scoreDuplicate(photo) {
