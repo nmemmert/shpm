@@ -7,7 +7,7 @@ const SETTING_DEFAULTS = {
   thumb_quality:     '80',
   preview_size:      '1600',
   preview_quality:   '85',
-  dedupe_threshold:  '5',
+  dedupe_threshold:  '3',
   // iCloud Photos sync
   icloud_enabled:    '0',
   icloud_apple_id:   '',

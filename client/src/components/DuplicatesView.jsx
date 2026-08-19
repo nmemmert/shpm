@@ -106,7 +106,7 @@ export default function DuplicatesView({ onOpenPhoto, onGroupCountChange }) {
             {scanResult.newPairs === 0
               ? 'No new pairs'
               : `${scanResult.newPairs} new pair${scanResult.newPairs !== 1 ? 's' : ''} found`}
-            {' · '}{scanResult.photos.toLocaleString()} photos · {scanResult.duration}ms
+            {' · '}{(scanResult.compared ?? scanResult.photos).toLocaleString()} compared · {scanResult.duration}ms
           </span>
         )}
       </div>

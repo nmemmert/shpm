@@ -4,17 +4,36 @@ import { hammingDistance } from '../worker/hash.js';
 // so the server stays responsive during a long scan.
 const SCAN_CHUNK = 50;
 
+// dHash is 64 bits. A near-uniform image (solid color, blank shot, sand
+// close-up) has almost no gradient transitions so its hash has very few
+// or very many bits set. These images match many unrelated photos and
+// produce false positives. Require 8–56 set bits out of 64 (12–87% density).
+function popcount16hex(hex) {
+  let n = (parseInt(hex.slice(0, 8), 16) >>> 0);
+  let m = (parseInt(hex.slice(8),    16) >>> 0);
+  const pc = x => { x -= (x >> 1) & 0x55555555; x = (x & 0x33333333) + ((x >> 2) & 0x33333333); x = (x + (x >> 4)) & 0x0f0f0f0f; return Math.imul(x, 0x01010101) >>> 24; };
+  return pc(n) + pc(m);
+}
+
+function hasGoodEntropy(phash) {
+  const bits = popcount16hex(phash);
+  return bits >= 8 && bits <= 56;
+}
+
 export async function scan(db, threshold) {
-  const THRESHOLD = threshold ?? parseInt(process.env.DEDUPE_THRESHOLD ?? '5', 10);
+  const THRESHOLD = threshold ?? parseInt(process.env.DEDUPE_THRESHOLD ?? '3', 10);
   const start = Date.now();
 
   // Clear all existing pairs so the result exactly matches the current threshold.
   // Dismissed pairs are also cleared — a fresh scan is a clean slate.
   db.raw.prepare('DELETE FROM duplicate_pairs').run();
 
-  const photos = db.raw.prepare(
+  const allPhotos = db.raw.prepare(
     "SELECT id, phash FROM photos WHERE phash IS NOT NULL AND phash != '0000000000000000'"
   ).all();
+
+  // Skip near-uniform images — their hashes are unreliable and cause false matches
+  const photos = allPhotos.filter(p => hasGoodEntropy(p.phash));
 
   const insert = db.raw.prepare(
     'INSERT OR IGNORE INTO duplicate_pairs (photo_id_a, photo_id_b, distance) VALUES (?, ?, ?)'
@@ -39,7 +58,7 @@ export async function scan(db, threshold) {
     })();
   }
 
-  return { photos: photos.length, newPairs, duration: Date.now() - start };
+  return { photos: allPhotos.length, compared: photos.length, newPairs, duration: Date.now() - start };
 }
 
 const ID_BATCH = 900;
