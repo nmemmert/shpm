@@ -172,8 +172,8 @@ export function bulkAddToCollection(ids, collectionId) {
 }
 
 // Duplicates
-export function fetchDuplicates() {
-  return api('/api/duplicates');
+export function fetchDuplicates(page = 1, limit = 20) {
+  return api(`/api/duplicates?page=${page}&limit=${limit}`);
 }
 
 export function scanDuplicates() {

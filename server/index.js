@@ -568,9 +568,17 @@ app.post('/api/dedupe/scan', async (_req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/duplicates', (_req, res) => {
+app.get('/api/duplicates', (req, res) => {
+  const PAGE_SIZE = 20;
+  const page  = Math.max(1, parseInt(req.query.page  ?? '1',  10));
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit ?? String(PAGE_SIZE), 10)));
+
   const rawGroups = getGroups(db);
-  const groups = rawGroups.map(group =>
+  const total  = rawGroups.length;
+  const start  = (page - 1) * limit;
+  const slice  = rawGroups.slice(start, start + limit);
+
+  const groups = slice.map(group =>
     group.map(p => ({
       id:           p.id,
       date_taken:   p.date_taken,
@@ -582,7 +590,8 @@ app.get('/api/duplicates', (_req, res) => {
       preview_url:  posterUrl(p.preview_path),
     }))
   );
-  res.json({ groups, total: groups.length });
+
+  res.json({ groups, total, page, limit, pages: Math.ceil(total / limit) });
 });
 
 app.post('/api/duplicates/dismiss', (req, res) => {
